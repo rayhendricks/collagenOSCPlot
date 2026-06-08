@@ -22,6 +22,7 @@ WBcel235_genomic.gff.gz
 gene_annotation.tsv
 normalized_counts.tsv
 size_factors.tsv
+oscillation.tsv
 data.json
 nohup.out
 

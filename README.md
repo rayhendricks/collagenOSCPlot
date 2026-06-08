@@ -40,6 +40,9 @@ Opening the file directly works because the data is loaded via `<script src="dat
 - **Add a gene** — type in the search box (symbol or WBGene ID) and pick from the list.
   Add multiple genes to overlay them; each gets its own color.
 - **Remove** — click the `×` on a gene chip, or **Clear all**.
+- **Oscillators only** — restrict the search to the ~3,000 genes called as rhythmic
+  (see *Oscillator detection* below). Rhythmic genes also carry an `osc ~Nh` badge
+  (N = estimated period) in the search list.
 - **Replicate points** — 7 timepoints (37, 38, 39, 41, 45, 47, 48 h) have a second
   replicate, shown as open diamonds. Toggle with the checkbox.
 - **Linear vs Log₁₀** — linear shows how big a peak is; log shows the rhythm and is the
@@ -73,11 +76,35 @@ normalized_counts.tsv  +  size_factors.tsv
         │
 WBcel235_genomic.gff.gz      latest RefSeq assembly (GCF_000002985.6)
         │  awk → gene_annotation.tsv   (WBGene ID ↔ symbol ↔ coords ↔ biotype)
+        │
+normalized_counts.tsv
+        │  detect_oscillators.py → oscillation.tsv   (per-gene rhythmicity call)
         ▼
-        │  build_data.py  (join on stable WBGene ID, pack to JSON)
+        │  build_data.py  (join counts + annotation + osc calls on WBGene ID)
         ▼
 data.json → data.js          loaded by index.html (Plotly dashboard)
 ```
+
+### Oscillator detection (`detect_oscillators.py`)
+"Oscillator" is **computed from the time course itself** — not taken from an external
+list. The molt-cycle oscillation here is sharp (spiky), its period *drifts* (lengthens)
+across development, and only ~4–6 cycles fit in the 5–48 h window, which defeats naive
+FFT-single-bin or fixed-lag autocorrelation scoring. So we detect the biology directly:
+
+1. `log2(x + 1)`.
+2. Remove the slow developmental trend with a **local moving average** (window ≈ one
+   period, 7 h). A local smoother — unlike a global polynomial fit — does **not** "ring"
+   on a step, so switch-like genes (e.g. `col-19`) are not mistaken for oscillators.
+3. Require several **prominent peaks _and_ troughs** (the signal repeatedly returns to
+   baseline — a switch does not), regularly spaced at a molt-cycle interval (6–10 h),
+   with amplitude ≥ 2.5 log₂ (~5.7-fold).
+
+**Calibration:** yields **3,062** oscillating genes (cf. ~3,235 high-confidence in
+[Meeuse et al. 2020](https://www.embopress.org/doi/full/10.15252/msb.20209498)),
+recovers 8/8 canonical cyclers tested (`lin-42, mlt-10, dpy-13, bli-1, qua-1, mlt-9,
+noah-1, grd-3`) and rejects 4/4 controls (`act-1, col-19, tba-1, ama-1`). It is a
+deliberately **high-confidence, conservative** heuristic, not a statistical rhythmicity
+test — treat the calls as a curated shortlist, not ground truth.
 
 ### Normalization detail
 `normalize_deseq2.R` drops the gene-length `width` column, builds a `DESeqDataSet`
@@ -115,7 +142,10 @@ curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/002/985/GCF_000002985
   -o WBcel235_genomic.gff.gz
 #   (parsing awk one-liner is documented in build steps / commit history)
 
-# 5. build the dashboard data  ->  data.json, then wrap into data.js
+# 5. oscillator calls  ->  oscillation.tsv
+mamba run -n collagen python detect_oscillators.py
+
+# 6. build the dashboard data  ->  data.json, then wrap into data.js
 mamba run -n collagen python build_data.py
 { printf 'window.DATA='; cat data.json; } > data.js
 ```
@@ -129,6 +159,7 @@ mamba run -n collagen python build_data.py
 | `index.html` | ✓ | The dashboard (Plotly + vanilla JS) |
 | `data.js` | ✓ | Bundled normalized expression + annotation (`window.DATA`) |
 | `normalize_deseq2.R` | ✓ | DESeq2 size-factor normalization |
-| `build_data.py` | ✓ | Joins counts + annotation into `data.json` |
+| `detect_oscillators.py` | ✓ | Calls rhythmic genes from the time course |
+| `build_data.py` | ✓ | Joins counts + annotation + osc calls into `data.json` |
 | `GSE130811_expr.tab.gz` | ✓ | Raw count matrix from GEO |
-| `normalized_counts.tsv`, `data.json`, `*.gff.gz`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |
+| `normalized_counts.tsv`, `oscillation.tsv`, `data.json`, `*.gff.gz`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |

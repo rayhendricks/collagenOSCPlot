@@ -11,6 +11,13 @@ with open("gene_annotation.tsv") as f:
         ann[row["wbgene"]] = (row["symbol"], row["chrom"], int(row["start"]),
                               int(row["end"]), row["strand"], row["biotype"])
 
+# --- oscillation calls: wbgene -> (is_oscillator, period_hours) ---
+osc = {}
+with open("oscillation.tsv") as f:
+    r = csv.DictReader(f, delimiter="\t")
+    for row in r:
+        osc[row["wbgene"]] = (row["osc"] == "1", float(row["period"]))
+
 # --- normalized counts ---
 with open("normalized_counts.tsv") as f:
     header = f.readline().rstrip("\n").split("\t")
@@ -34,13 +41,15 @@ with open("normalized_counts.tsv") as f:
         vals = [float(x) for x in parts[1:]]
         sym, chrom, start, end, strand, bt = ann.get(
             wb, (wb, "?", 0, 0, ".", "unknown"))
+        is_osc, period = osc.get(wb, (False, 0.0))
         genes[wb] = {
             "sym": sym, "chrom": chrom, "start": start, "end": end,
             "strand": strand, "bt": bt,
+            "osc": is_osc, "period": period,
             "v": [round(vals[i], 2) for i in main_idx],
             "r": [round(vals[i], 2) for i in rep_idx],
         }
-        index.append({"wb": wb, "sym": sym})
+        index.append({"wb": wb, "sym": sym, "o": 1 if is_osc else 0})
 
 out = {
     "meta": {
@@ -49,6 +58,7 @@ out = {
         "normalization": "DESeq2 median-of-ratios (size-factor) normalized counts",
         "assembly": "WBcel235 / ce11 (RefSeq GCF_000002985.6)",
         "n_genes": len(genes),
+        "n_osc": sum(1 for g in genes.values() if g["osc"]),
     },
     "hours": main_hours,
     "rep_hours": rep_hours,

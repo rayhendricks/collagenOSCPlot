@@ -28,6 +28,11 @@
   #suggest .sym { font-weight:600; }
   #suggest .wb { color:var(--muted); font-size:11px; margin-left:6px; }
   #suggest .bt { color:var(--muted); font-size:11px; float:right; }
+  .osc { color:#7bc86c; font-size:10px; font-weight:600; margin-left:6px;
+         border:1px solid #2f5d34; border-radius:8px; padding:0 5px; }
+  .oscfilter { display:flex; align-items:center; gap:6px; margin-top:10px;
+        font-size:13px; cursor:pointer; }
+  .oscfilter #osccount { color:var(--muted); font-size:12px; }
   .chips { margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; }
   .chip { display:flex; align-items:center; gap:7px; padding:5px 9px; font-size:13px;
         background:var(--panel); border:1px solid var(--line); border-radius:16px; }
@@ -63,6 +68,9 @@
       <div id="suggest"></div>
     </div>
 
+    <label class="oscfilter"><input type="checkbox" id="osconly">
+      oscillators only <span id="osccount"></span></label>
+
     <div class="chips" id="chips"></div>
     <div class="rowbtns">
       <button id="clear">Clear all</button>
@@ -96,7 +104,9 @@ document.getElementById("meta").innerHTML =
   `<b>Dataset:</b> ${D.meta.title}<br>` +
   `<b>Normalization:</b> ${D.meta.normalization}<br>` +
   `<b>Annotation:</b> ${D.meta.assembly}<br>` +
-  `<b>Timepoints:</b> ${D.hours[0]}–${D.hours[D.hours.length-1]} h (hourly), +${D.rep_hours.length} replicates`;
+  `<b>Timepoints:</b> ${D.hours[0]}–${D.hours[D.hours.length-1]} h (hourly), +${D.rep_hours.length} replicates<br>` +
+  `<b>Oscillators:</b> ${D.meta.n_osc.toLocaleString()} genes (computed from the time course — see README)`;
+document.getElementById("osccount").textContent = `(${D.meta.n_osc.toLocaleString()})`;
 
 const q = document.getElementById("q");
 const sug = document.getElementById("suggest");
@@ -111,8 +121,10 @@ let activeIdx = -1;
 function search(term){
   term = term.trim().toLowerCase();
   if(!term) return [];
+  const oscOnly = document.getElementById("osconly").checked;
   const starts = [], contains = [];
   for(const e of idx){
+    if(oscOnly && !e.o) continue;
     const s = e.sym.toLowerCase(), w = e.wb.toLowerCase();
     if(s.startsWith(term) || w.startsWith(term)) starts.push(e);
     else if(s.includes(term) || w.includes(term)) contains.push(e);
@@ -126,8 +138,9 @@ function renderSuggest(){
   sug.innerHTML = matches.map((e,i) => {
     const g = D.genes[e.wb];
     const chosen = selected.includes(e.wb) ? " ✓" : "";
+    const oscTag = g.osc ? `<span class="osc">osc ~${g.period}h</span>` : "";
     return `<div data-wb="${e.wb}" class="${i===activeIdx?'active':''}">` +
-           `<span class="sym">${e.sym}${chosen}</span><span class="wb">${e.wb}</span>` +
+           `<span class="sym">${e.sym}${chosen}</span>${oscTag}<span class="wb">${e.wb}</span>` +
            `<span class="bt">${g.bt}</span></div>`;
   }).join("");
   sug.style.display = "block";
@@ -135,6 +148,9 @@ function renderSuggest(){
 }
 
 q.addEventListener("input", () => { matches = search(q.value); activeIdx = -1; renderSuggest(); });
+document.getElementById("osconly").addEventListener("change", () => {
+  matches = search(q.value); activeIdx = -1; renderSuggest(); q.focus();
+});
 q.addEventListener("keydown", (e) => {
   if(sug.style.display==="none") return;
   if(e.key==="ArrowDown"){ activeIdx=Math.min(activeIdx+1,matches.length-1); renderSuggest(); e.preventDefault(); }
