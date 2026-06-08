@@ -23,6 +23,7 @@ gene_annotation.tsv
 normalized_counts.tsv
 size_factors.tsv
 oscillation.tsv
+meeuse_osc.tsv
 tf.tsv
 wb.gaf.gz
 go-basic.obo

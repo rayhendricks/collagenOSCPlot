@@ -40,9 +40,9 @@ Opening the file directly works because the data is loaded via `<script src="dat
 - **Add a gene** — type in the search box (symbol or WBGene ID) and pick from the list.
   Add multiple genes to overlay them; each gets its own color.
 - **Remove** — click the `×` on a gene chip, or **Clear all**.
-- **Oscillators only** — restrict the search to the ~3,000 genes called as rhythmic
-  (see *Oscillator detection* below). Rhythmic genes also carry an `osc ~Nh` badge
-  (N = estimated period) in the search list.
+- **Oscillators only** — restrict the search to the 3,739 genes classified as rhythmic by
+  Meeuse et al. 2020 (see *Oscillator calls* below). Rhythmic genes carry an `osc φN°`
+  badge (N = peak phase in degrees), and their amplitude + phase show on the gene chip.
 - **Transcription factors only** — restrict the search to genes with DNA-binding
   transcription-factor activity (see *Transcription factors* below); these carry a
   `TF` badge. Combine with **oscillators only** to find the rhythmic TFs (the
@@ -82,19 +82,35 @@ WBcel235_genomic.gff.gz      latest RefSeq assembly (GCF_000002985.6)
         │  awk → gene_annotation.tsv   (WBGene ID ↔ symbol ↔ coords ↔ biotype)
         │
 normalized_counts.tsv
-        │  detect_oscillators.py → oscillation.tsv   (per-gene rhythmicity call)
+        │  detect_oscillators.py → oscillation.tsv      (computed osc cross-check)
+meeuse_EV1.xlsx (Dataset EV1)
+        │  parse_meeuse.py      → meeuse_osc.tsv        (PRIMARY osc + amplitude + phase)
+wb.gaf.gz + go-basic.obo
+        │  detect_tfs.py        → tf.tsv                (transcription factors, GO:0003700)
         ▼
-        │  build_data.py  (join counts + annotation + osc calls on WBGene ID)
+        │  build_data.py  (join counts + annotation + osc + TF calls on WBGene ID)
         ▼
 data.json → data.js          loaded by index.html (Plotly dashboard)
 ```
 
-### Oscillator detection (`detect_oscillators.py`)
-"Oscillator" is **computed from the time course itself** — not taken from an external
-list. The target signal is the *C. elegans* **molt-cycle oscillation**: genes that rise
-and fall rhythmically with a period of roughly one larval stage (~7–8 h). Three
-properties of this real signal break the textbook periodicity tests, and shaped the
-method:
+### Oscillator calls — primary: Meeuse et al. 2020 (`parse_meeuse.py`)
+The dashboard's `osc` flag is the **authoritative, peer-reviewed classification** from
+[Meeuse et al. 2020](https://doi.org/10.15252/msb.20209498) — the paper this dataset comes
+from — supplied in their **Dataset EV1** (`meeuse_EV1.xlsx`, included; CC-BY 4.0). They
+classified **3,739 genes (24% of expressed)** as oscillating by **cosine fitting** (fixed
+7-h period, on t = 10–25 h where the period is most stable), with cut-offs **log₂
+amplitude ≥ 0.5 (≥ 2-fold)** and **P ≤ 0.01**. Crucially, every gene also carries a
+**log₂ amplitude** and a **peak phase** (degrees), so the dashboard shows *when* in the
+cycle each gene peaks (the `osc φN°` badge) — not just whether it oscillates. `parse_meeuse.py`
+flattens the table to `meeuse_osc.tsv`, joined on stable WBGene ID (3,739/3,739 map to our
+matrix).
+
+### Oscillator calls — cross-check: computed (`detect_oscillators.py`)
+We also **compute oscillation from the time course itself** (stored as `oscC`), as a
+reproducible, dependency-free cross-check. The target signal is the *C. elegans*
+**molt-cycle oscillation**: genes that rise and fall rhythmically with a period of roughly
+one larval stage (~7–8 h). Three properties of this real signal break the textbook
+periodicity tests, and shaped the method:
 
 | Property of the real signal | Why naive methods fail |
 |---|---|
@@ -125,7 +141,7 @@ same on `−resid`. Requiring **both** peaks and troughs is what separates an os
 once and stays high — many peaks possible, but it never comes back down repeatedly).
 
 **4. Estimate the period.** `period = median of the gaps (in hours) between consecutive
-peaks`. This is the number shown as the `osc ~Nh` badge in the dashboard.
+peaks` (the molt-cycle period; the dashboard now shows Meeuse's peak *phase* instead).
 
 **5. Call it.** A gene is flagged **oscillating** when *all* hold:
 
@@ -137,15 +153,21 @@ peaks`. This is the number shown as the `osc ~Nh` badge in the dashboard.
 | number of troughs | ≥ 3 | repeatedly returns to baseline (excludes switches) |
 | median peak interval (period) | 6–10 h | the molt-cycle band |
 
-**Calibration & validation.** These thresholds yield **3,062** oscillating genes —
-in line with the ~3,235 high-confidence cyclers in
-[Meeuse et al. 2020](https://www.embopress.org/doi/full/10.15252/msb.20209498). On
-spot-checks it recovers **8/8** canonical cyclers (`lin-42, mlt-10, dpy-13, bli-1, qua-1,
-mlt-9, noah-1, grd-3`) and rejects **4/4** controls (`act-1` — too low amplitude;
-`col-19` — a switch, period out of band; `tba-1`, `ama-1` — flat). It is a deliberately
-**high-confidence, conservative heuristic**, not a statistical rhythmicity test (no
-p-values / FDR) — treat the calls as a curated shortlist, not ground truth. For formal
-rhythmicity one would use RAIN / JTK_CYCLE or a periodic-spline model with replication.
+**Calibration & validation.** These thresholds yield **3,062** computed oscillators. On
+spot-checks the method recovers **8/8** canonical cyclers (`lin-42, mlt-10, dpy-13, bli-1,
+qua-1, mlt-9, noah-1, grd-3`) and rejects **4/4** controls (`act-1` — too low amplitude;
+`col-19` — a switch, period out of band; `tba-1`, `ama-1` — flat).
+
+**Agreement with Meeuse.** Of the 3,062 computed calls, **2,071 (68%) are also Meeuse
+oscillators**; conversely the computed set recovers **55%** of Meeuse's 3,739. The gap is
+expected and instructive: (a) our amplitude cut-off (≥ 5.7-fold) is **far stricter** than
+Meeuse's (≥ 2-fold), so we drop ~1,668 genuine low-amplitude cyclers (e.g. `blmp-1`, a key
+oscillator-regulating TF, amplitude 0.68); (b) our peak/trough method catches sharp,
+**non-sinusoidal** oscillators that Meeuse's cosine fit can miss, contributing some of the
+991 computed-only calls. The computed flag is a deliberately **high-confidence,
+conservative** heuristic, not a statistical rhythmicity test — which is exactly why the
+**Meeuse list is the primary `osc` flag** and the computed one is kept only as a
+cross-check.
 
 ### Transcription factors (`detect_tfs.py`)
 TF status is **not** inferred from expression — it comes from curated annotation. A gene
@@ -198,8 +220,11 @@ curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/002/985/GCF_000002985
   -o WBcel235_genomic.gff.gz
 #   (parsing awk one-liner is documented in build steps / commit history)
 
-# 5. oscillator calls  ->  oscillation.tsv
+# 5. oscillator calls  ->  oscillation.tsv (computed cross-check) + meeuse_osc.tsv (primary)
 mamba run -n collagen python detect_oscillators.py
+#   meeuse_EV1.xlsx is included; if missing, download Dataset EV1 from the paper
+#   (https://doi.org/10.15252/msb.20209498, Supplementary Information) and save as meeuse_EV1.xlsx
+mamba run -n collagen python parse_meeuse.py
 
 # 6. transcription-factor calls  ->  tf.tsv
 curl -sL "http://current.geneontology.org/annotations/wb.gaf.gz" -o wb.gaf.gz
@@ -220,8 +245,10 @@ mamba run -n collagen python build_data.py
 | `index.html` | ✓ | The dashboard (Plotly + vanilla JS) |
 | `data.js` | ✓ | Bundled normalized expression + annotation (`window.DATA`) |
 | `normalize_deseq2.R` | ✓ | DESeq2 size-factor normalization |
-| `detect_oscillators.py` | ✓ | Calls rhythmic genes from the time course |
+| `parse_meeuse.py` | ✓ | Flattens Meeuse Dataset EV1 → primary osc + amplitude + phase |
+| `meeuse_EV1.xlsx` | ✓ | Meeuse et al. 2020 Dataset EV1 (CC-BY 4.0) |
+| `detect_oscillators.py` | ✓ | Computes osc cross-check from the time course |
 | `detect_tfs.py` | ✓ | Flags transcription factors from GO:0003700 |
 | `build_data.py` | ✓ | Joins counts + annotation + osc + TF calls into `data.json` |
 | `GSE130811_expr.tab.gz` | ✓ | Raw count matrix from GEO |
-| `normalized_counts.tsv`, `oscillation.tsv`, `tf.tsv`, `data.json`, `*.gff.gz`, `*.gaf.gz`, `go-basic.obo`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |
+| `normalized_counts.tsv`, `oscillation.tsv`, `meeuse_osc.tsv`, `tf.tsv`, `data.json`, `*.gff.gz`, `*.gaf.gz`, `go-basic.obo`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |

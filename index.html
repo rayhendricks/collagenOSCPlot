@@ -109,7 +109,8 @@ document.getElementById("meta").innerHTML =
   `<b>Normalization:</b> ${D.meta.normalization}<br>` +
   `<b>Annotation:</b> ${D.meta.assembly}<br>` +
   `<b>Timepoints:</b> ${D.hours[0]}–${D.hours[D.hours.length-1]} h (hourly), +${D.rep_hours.length} replicates<br>` +
-  `<b>Oscillators:</b> ${D.meta.n_osc.toLocaleString()} genes (computed from the time course — see README)<br>` +
+  `<b>Oscillators:</b> ${D.meta.n_osc.toLocaleString()} genes — Meeuse et al. 2020 (cosine fit; with amplitude + peak phase)<br>` +
+  `<span style="color:var(--muted)">cross-check: ${D.meta.n_oscC.toLocaleString()} by our computed method (see README)</span><br>` +
   `<b>Transcription factors:</b> ${D.meta.n_tf.toLocaleString()} genes (GO:0003700, DNA-binding TF activity)`;
 document.getElementById("osccount").textContent = `(${D.meta.n_osc.toLocaleString()})`;
 document.getElementById("tfcount").textContent = `(${D.meta.n_tf.toLocaleString()})`;
@@ -146,7 +147,7 @@ function renderSuggest(){
   sug.innerHTML = matches.map((e,i) => {
     const g = D.genes[e.wb];
     const chosen = selected.includes(e.wb) ? " ✓" : "";
-    const oscTag = g.osc ? `<span class="osc">osc ~${g.period}h</span>` : "";
+    const oscTag = g.osc ? `<span class="osc">osc${g.phase!=null?` φ${Math.round(g.phase)}°`:""}</span>` : "";
     const tfTag = g.tf ? `<span class="tf">TF</span>` : "";
     return `<div data-wb="${e.wb}" class="${i===activeIdx?'active':''}">` +
            `<span class="sym">${e.sym}${chosen}</span>${oscTag}${tfTag}<span class="wb">${e.wb}</span>` +
@@ -183,8 +184,9 @@ function renderChips(){
   chipsEl.innerHTML = selected.map(wb => {
     const g = D.genes[wb];
     const coord = g.chrom==="?" ? "no coord" : `chr${g.chrom}:${g.start.toLocaleString()}`;
+    const oscNote = g.osc ? ` · osc φ${Math.round(g.phase)}° amp ${g.amp}` : "";
     return `<span class="chip"><span class="dot" style="background:${colorOf[wb]}"></span>` +
-           `<span>${g.sym} <small>${coord}</small></span>` +
+           `<span>${g.sym} <small>${coord}${oscNote}</small></span>` +
            `<span class="x" data-wb="${wb}">×</span></span>`;
   }).join("");
   [...chipsEl.querySelectorAll(".x")].forEach(x => x.onclick = () => removeGene(x.dataset.wb));

@@ -11,12 +11,23 @@ with open("gene_annotation.tsv") as f:
         ann[row["wbgene"]] = (row["symbol"], row["chrom"], int(row["start"]),
                               int(row["end"]), row["strand"], row["biotype"])
 
-# --- oscillation calls: wbgene -> (is_oscillator, period_hours) ---
-osc = {}
+# --- PRIMARY oscillation calls: Meeuse et al. 2020 Dataset EV1 ---
+#     wbgene -> (is_oscillator, log2_amplitude, peak_phase_deg)
+def _f(s):
+    return float(s) if s not in ("", "nan", "NaN") else None
+
+meeuse = {}
+with open("meeuse_osc.tsv") as f:
+    r = csv.DictReader(f, delimiter="\t")
+    for row in r:
+        meeuse[row["wbgene"]] = (row["osc"] == "1", _f(row["amp"]), _f(row["phase"]))
+
+# --- cross-check: our computed oscillation calls (peaks/troughs heuristic) ---
+osc_c = {}
 with open("oscillation.tsv") as f:
     r = csv.DictReader(f, delimiter="\t")
     for row in r:
-        osc[row["wbgene"]] = (row["osc"] == "1", float(row["period"]))
+        osc_c[row["wbgene"]] = row["osc"] == "1"
 
 # --- transcription factors (GO:0003700-defined): set of wbgene ---
 tf = set()
@@ -48,12 +59,16 @@ with open("normalized_counts.tsv") as f:
         vals = [float(x) for x in parts[1:]]
         sym, chrom, start, end, strand, bt = ann.get(
             wb, (wb, "?", 0, 0, ".", "unknown"))
-        is_osc, period = osc.get(wb, (False, 0.0))
+        m = meeuse.get(wb)                       # Meeuse 2020 (primary)
+        is_osc = m[0] if m else False
+        amp = m[1] if m else None
+        phase = m[2] if m else None
+        is_oscC = osc_c.get(wb, False)           # our computed (cross-check)
         is_tf = wb in tf
         genes[wb] = {
             "sym": sym, "chrom": chrom, "start": start, "end": end,
             "strand": strand, "bt": bt,
-            "osc": is_osc, "period": period, "tf": is_tf,
+            "osc": is_osc, "amp": amp, "phase": phase, "oscC": is_oscC, "tf": is_tf,
             "v": [round(vals[i], 2) for i in main_idx],
             "r": [round(vals[i], 2) for i in rep_idx],
         }
@@ -68,7 +83,9 @@ out = {
         "assembly": "WBcel235 / ce11 (RefSeq GCF_000002985.6)",
         "n_genes": len(genes),
         "n_osc": sum(1 for g in genes.values() if g["osc"]),
+        "n_oscC": sum(1 for g in genes.values() if g["oscC"]),
         "n_tf": sum(1 for g in genes.values() if g["tf"]),
+        "osc_source": "Meeuse et al. 2020 (Mol Syst Biol), Dataset EV1 — cosine fit",
     },
     "hours": main_hours,
     "rep_hours": rep_hours,
