@@ -1,0 +1,31 @@
+# --- Claude / assistant artifacts ---
+.claude/
+CLAUDE.md
+**/.claude/
+*.claude
+.cursor/
+.aider*
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- build / tool logs ---
+env_build.log
+gh_install.log
+*.log
+
+# --- large regenerable pipeline intermediates ---
+# (rebuild via the steps in README.md)
+WBcel235_genomic.gff.gz
+gene_annotation.tsv
+normalized_counts.tsv
+size_factors.tsv
+data.json
+nohup.out
+
+# --- python ---
+__pycache__/
+*.pyc
+.ipynb_checkpoints/

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>C. elegans oscillator — GSE130811 expression dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+  :root { --bg:#0f1117; --panel:#171a23; --fg:#e6e9ef; --muted:#9aa3b2; --accent:#5aa9e6; --line:#262b38; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); }
+  header h1 { margin:0; font-size:16px; font-weight:600; }
+  header p { margin:4px 0 0; font-size:12px; color:var(--muted); }
+  .wrap { display:flex; gap:18px; padding:18px 20px; align-items:flex-start; flex-wrap:wrap; }
+  .controls { width:340px; flex:0 0 340px; }
+  .search { position:relative; }
+  input[type=text]{ width:100%; padding:10px 12px; font-size:14px; border-radius:8px;
+        border:1px solid var(--line); background:var(--panel); color:var(--fg); outline:none; }
+  input[type=text]:focus{ border-color:var(--accent); }
+  #suggest { position:absolute; left:0; right:0; top:42px; z-index:10; background:var(--panel);
+        border:1px solid var(--line); border-radius:8px; max-height:320px; overflow:auto; display:none; }
+  #suggest div { padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--line); }
+  #suggest div:last-child{ border-bottom:none; }
+  #suggest div:hover, #suggest div.active { background:#1f2533; }
+  #suggest .sym { font-weight:600; }
+  #suggest .wb { color:var(--muted); font-size:11px; margin-left:6px; }
+  #suggest .bt { color:var(--muted); font-size:11px; float:right; }
+  .chips { margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { display:flex; align-items:center; gap:7px; padding:5px 9px; font-size:13px;
+        background:var(--panel); border:1px solid var(--line); border-radius:16px; }
+  .chip .dot { width:10px; height:10px; border-radius:50%; flex:0 0 10px; }
+  .chip .x { cursor:pointer; color:var(--muted); font-weight:700; margin-left:2px; }
+  .chip .x:hover { color:#e06c75; }
+  .chip small { color:var(--muted); }
+  .rowbtns { margin-top:10px; display:flex; gap:10px; align-items:center; font-size:12px; color:var(--muted); }
+  .rowbtns button { background:none; border:1px solid var(--line); color:var(--muted); border-radius:6px;
+        padding:4px 8px; cursor:pointer; font-size:12px; }
+  .rowbtns button:hover { color:var(--fg); border-color:var(--accent); }
+  .scale { margin-top:16px; font-size:13px; }
+  .scale label { margin-right:14px; cursor:pointer; }
+  .meta { margin-top:18px; font-size:12px; color:var(--muted); line-height:1.7; }
+  .meta b { color:var(--fg); }
+  #plot { flex:1 1 600px; min-width:480px; height:580px; background:var(--panel);
+        border:1px solid var(--line); border-radius:10px; }
+  .hint { color:var(--muted); font-size:12px; margin-top:10px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>State transitions of a developmental oscillator — extended wild-type time course</h1>
+  <p id="subtitle"></p>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="search">
+      <input id="q" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Add a gene (e.g. col-19, lin-42, WBGene00000608)…">
+      <div id="suggest"></div>
+    </div>
+
+    <div class="chips" id="chips"></div>
+    <div class="rowbtns">
+      <button id="clear">Clear all</button>
+      <label><input type="checkbox" id="showrep" checked> show replicate points</label>
+    </div>
+
+    <div class="scale">
+      <b style="font-size:12px;color:var(--muted)">Y-AXIS</b><br>
+      <label><input type="radio" name="scale" value="linear" checked> Linear (raw normalized)</label>
+      <label><input type="radio" name="scale" value="log"> Log&#8321;&#8320;</label>
+    </div>
+
+    <div class="meta" id="meta"></div>
+    <div class="hint">Add several genes to compare their rhythms. Linear shows absolute amplitude;
+       log reveals fold-change rhythm in low-expressed genes.</div>
+  </div>
+
+  <div id="plot"></div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const D = window.DATA;
+const idx = D.index;
+const palette = ["#5aa9e6","#e6915a","#7bc86c","#c678dd","#e6c84f","#56b6c2",
+                 "#e06c75","#d19a66","#98c379","#61afef","#c9a0ff","#ef9a9a"];
+
+document.getElementById("subtitle").textContent =
+  `${D.meta.series} · ${D.meta.normalization} · ${D.meta.assembly} · ${D.meta.n_genes.toLocaleString()} genes`;
+document.getElementById("meta").innerHTML =
+  `<b>Dataset:</b> ${D.meta.title}<br>` +
+  `<b>Normalization:</b> ${D.meta.normalization}<br>` +
+  `<b>Annotation:</b> ${D.meta.assembly}<br>` +
+  `<b>Timepoints:</b> ${D.hours[0]}–${D.hours[D.hours.length-1]} h (hourly), +${D.rep_hours.length} replicates`;
+
+const q = document.getElementById("q");
+const sug = document.getElementById("suggest");
+const chipsEl = document.getElementById("chips");
+
+let selected = [];      // ordered list of WBGene IDs
+let colorOf = {};       // wbgene -> color (stable even after removals)
+let nextColor = 0;
+let matches = [];
+let activeIdx = -1;
+
+function search(term){
+  term = term.trim().toLowerCase();
+  if(!term) return [];
+  const starts = [], contains = [];
+  for(const e of idx){
+    const s = e.sym.toLowerCase(), w = e.wb.toLowerCase();
+    if(s.startsWith(term) || w.startsWith(term)) starts.push(e);
+    else if(s.includes(term) || w.includes(term)) contains.push(e);
+    if(starts.length >= 30) break;
+  }
+  return starts.concat(contains).slice(0, 30);
+}
+
+function renderSuggest(){
+  if(matches.length === 0){ sug.style.display="none"; return; }
+  sug.innerHTML = matches.map((e,i) => {
+    const g = D.genes[e.wb];
+    const chosen = selected.includes(e.wb) ? " ✓" : "";
+    return `<div data-wb="${e.wb}" class="${i===activeIdx?'active':''}">` +
+           `<span class="sym">${e.sym}${chosen}</span><span class="wb">${e.wb}</span>` +
+           `<span class="bt">${g.bt}</span></div>`;
+  }).join("");
+  sug.style.display = "block";
+  [...sug.children].forEach(c => c.onclick = () => addGene(c.dataset.wb));
+}
+
+q.addEventListener("input", () => { matches = search(q.value); activeIdx = -1; renderSuggest(); });
+q.addEventListener("keydown", (e) => {
+  if(sug.style.display==="none") return;
+  if(e.key==="ArrowDown"){ activeIdx=Math.min(activeIdx+1,matches.length-1); renderSuggest(); e.preventDefault(); }
+  else if(e.key==="ArrowUp"){ activeIdx=Math.max(activeIdx-1,0); renderSuggest(); e.preventDefault(); }
+  else if(e.key==="Enter"){ const pick = matches[activeIdx>=0?activeIdx:0]; if(pick) addGene(pick.wb); }
+  else if(e.key==="Escape"){ sug.style.display="none"; }
+});
+document.addEventListener("click", (e) => { if(!sug.contains(e.target) && e.target!==q) sug.style.display="none"; });
+
+function addGene(wb){
+  if(!selected.includes(wb)){
+    selected.push(wb);
+    if(!colorOf[wb]){ colorOf[wb] = palette[nextColor % palette.length]; nextColor++; }
+  }
+  q.value = ""; matches = []; sug.style.display = "none"; q.focus();
+  renderChips(); draw();
+}
+function removeGene(wb){ selected = selected.filter(x => x !== wb); renderChips(); draw(); }
+
+function renderChips(){
+  chipsEl.innerHTML = selected.map(wb => {
+    const g = D.genes[wb];
+    const coord = g.chrom==="?" ? "no coord" : `chr${g.chrom}:${g.start.toLocaleString()}`;
+    return `<span class="chip"><span class="dot" style="background:${colorOf[wb]}"></span>` +
+           `<span>${g.sym} <small>${coord}</small></span>` +
+           `<span class="x" data-wb="${wb}">×</span></span>`;
+  }).join("");
+  [...chipsEl.querySelectorAll(".x")].forEach(x => x.onclick = () => removeGene(x.dataset.wb));
+}
+
+function currentScale(){ return document.querySelector('input[name=scale]:checked').value; }
+
+function draw(){
+  if(selected.length === 0){ Plotly.purge("plot"); return; }
+  const scale = currentScale();
+  const showRep = document.getElementById("showrep").checked;
+  const traces = [];
+  selected.forEach(wb => {
+    const g = D.genes[wb], c = colorOf[wb];
+    traces.push({ x:D.hours, y:g.v, mode:"lines+markers", name:g.sym,
+                  line:{color:c,width:2}, marker:{size:5,color:c} });
+    if(showRep){
+      traces.push({ x:D.rep_hours, y:g.r, mode:"markers", name:g.sym+" (rep)",
+                    marker:{size:8,color:c,symbol:"diamond-open",line:{width:1.5}},
+                    showlegend:false, hoverinfo:"skip" });
+    }
+  });
+  const title = selected.length===1
+      ? `${D.genes[selected[0]].sym} — normalized expression`
+      : `Normalized expression — ${selected.length} genes`;
+  const layout = {
+    paper_bgcolor:"#171a23", plot_bgcolor:"#171a23", font:{color:"#e6e9ef"},
+    margin:{t:50,r:20,b:50,l:64},
+    title:{ text:title, font:{size:15} },
+    xaxis:{ title:"hours after plating (25°C)", type:"linear", range:[4,49],
+            gridcolor:"#262b38", dtick:5, zeroline:false },
+    yaxis:{ title: scale==="log" ? "norm. counts (log₁₀)" : "norm. counts",
+            type: scale, gridcolor:"#262b38", zeroline:false,
+            rangemode: scale==="log" ? "normal" : "tozero" },
+    legend:{ orientation:"h", y:1.08, x:1, xanchor:"right" },
+    hovermode:"x unified",
+  };
+  Plotly.react("plot", traces, layout, {responsive:true, displaylogo:false});
+}
+
+document.querySelectorAll('input[name=scale]').forEach(r => r.addEventListener("change", draw));
+document.getElementById("showrep").addEventListener("change", draw);
+document.getElementById("clear").addEventListener("click", () => { selected=[]; renderChips(); draw(); });
+
+// default view: a couple of canonical oscillating genes
+["lin-42","col-19"].forEach(sym => {
+  const e = idx.find(x => x.sym === sym);
+  if(e) addGene(e.wb);
+});
+</script>
+</body>
+</html>
