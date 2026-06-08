@@ -1,10 +1,10 @@
 # C. elegans developmental oscillator — expression dashboard
 
-## 🔬 **[▶ LAUNCH THE LIVE DASHBOARD](https://rayhendricks.github.io/collagenOSCPlot/)**
+## **[LAUNCH THE LIVE DASHBOARD](https://rayhendricks.github.io/collagenOSCPlot/)**
 
-### → https://rayhendricks.github.io/collagenOSCPlot/
+### https://rayhendricks.github.io/collagenOSCPlot/
 
-[![Open Dashboard](https://img.shields.io/badge/▶_OPEN_LIVE_DASHBOARD-rayhendricks.github.io%2FcollagenOSCPlot-2ea44f?style=for-the-badge&logo=plotly&logoColor=white)](https://rayhendricks.github.io/collagenOSCPlot/)
+[![Open Dashboard](https://img.shields.io/badge/OPEN_LIVE_DASHBOARD-rayhendricks.github.io%2FcollagenOSCPlot-2ea44f?style=for-the-badge)](https://rayhendricks.github.io/collagenOSCPlot/)
 
 *Runs in any browser — no install, no account. Search a gene, overlay several, toggle linear/log.*
 
@@ -132,11 +132,3 @@ mamba run -n collagen python build_data.py
 | `build_data.py` | ✓ | Joins counts + annotation into `data.json` |
 | `GSE130811_expr.tab.gz` | ✓ | Raw count matrix from GEO |
 | `normalized_counts.tsv`, `data.json`, `*.gff.gz`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |
-
----
-
-## Citation
-
-If you use this dataset, cite the original study (GSE133576, *"State transitions of a
-developmental oscillator"*) and GEO accession **GSE130811**. Annotation: RefSeq WBcel235
-(GCF_000002985.6).
