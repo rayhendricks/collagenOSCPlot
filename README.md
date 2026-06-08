@@ -1,5 +1,15 @@
 # C. elegans developmental oscillator — expression dashboard
 
+## 🔬 **[▶ LAUNCH THE LIVE DASHBOARD](https://rayhendricks.github.io/collagenOSCPlot/)**
+
+### → https://rayhendricks.github.io/collagenOSCPlot/
+
+[![Open Dashboard](https://img.shields.io/badge/▶_OPEN_LIVE_DASHBOARD-rayhendricks.github.io%2FcollagenOSCPlot-2ea44f?style=for-the-badge&logo=plotly&logoColor=white)](https://rayhendricks.github.io/collagenOSCPlot/)
+
+*Runs in any browser — no install, no account. Search a gene, overlay several, toggle linear/log.*
+
+---
+
 An interactive browser dashboard for exploring **DESeq2-normalized RNA-seq expression**
 across the *C. elegans* extended wild-type (N2) developmental time course
 (**GEO [GSE130811](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130811)**,
