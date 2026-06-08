@@ -43,6 +43,10 @@ Opening the file directly works because the data is loaded via `<script src="dat
 - **Oscillators only** — restrict the search to the ~3,000 genes called as rhythmic
   (see *Oscillator detection* below). Rhythmic genes also carry an `osc ~Nh` badge
   (N = estimated period) in the search list.
+- **Transcription factors only** — restrict the search to genes with DNA-binding
+  transcription-factor activity (see *Transcription factors* below); these carry a
+  `TF` badge. Combine with **oscillators only** to find the rhythmic TFs (the
+  oscillator's own regulators — 82 genes).
 - **Replicate points** — 7 timepoints (37, 38, 39, 41, 45, 47, 48 h) have a second
   replicate, shown as open diamonds. Toggle with the checkbox.
 - **Linear vs Log₁₀** — linear shows how big a peak is; log shows the rhythm and is the
@@ -106,6 +110,21 @@ noah-1, grd-3`) and rejects 4/4 controls (`act-1, col-19, tba-1, ama-1`). It is 
 deliberately **high-confidence, conservative** heuristic, not a statistical rhythmicity
 test — treat the calls as a curated shortlist, not ground truth.
 
+### Transcription factors (`detect_tfs.py`)
+TF status is **not** inferred from expression — it comes from curated annotation. A gene
+is flagged a TF if its product has **DNA-binding transcription factor activity**
+(Gene Ontology **GO:0003700**), i.e. it binds DNA sequence-specifically to regulate
+transcription. The script parses `go-basic.obo` to collect GO:0003700 **and all its
+descendant terms** (the RNA-pol-II-specific children etc.), then selects every
+*C. elegans* gene with an `enables` annotation to any of them in WormBase's GO file
+(`wb.gaf.gz`).
+
+**Result:** **632** TFs in the matrix. Validates 12/13 spot-checked TFs (`daf-16, pha-4,
+skn-1, blmp-1, nhr-23/25, ...`; the lone miss, `lin-14`, genuinely lacks a GO DNA-binding
+annotation) and 0/7 non-TFs. This is the **curated, high-confidence** definition — more
+conservative than the ~900 *computationally predicted* TFs in compendia like wTF, by
+design. Source: GO consortium GAF + go-basic ontology.
+
 ### Normalization detail
 `normalize_deseq2.R` drops the gene-length `width` column, builds a `DESeqDataSet`
 with `design = ~1` (intercept only — DESeq2 is used **purely as a normalization engine**,
@@ -145,7 +164,12 @@ curl -sL "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/002/985/GCF_000002985
 # 5. oscillator calls  ->  oscillation.tsv
 mamba run -n collagen python detect_oscillators.py
 
-# 6. build the dashboard data  ->  data.json, then wrap into data.js
+# 6. transcription-factor calls  ->  tf.tsv
+curl -sL "http://current.geneontology.org/annotations/wb.gaf.gz" -o wb.gaf.gz
+curl -sL "http://purl.obolibrary.org/obo/go/go-basic.obo" -o go-basic.obo
+mamba run -n collagen python detect_tfs.py
+
+# 7. build the dashboard data  ->  data.json, then wrap into data.js
 mamba run -n collagen python build_data.py
 { printf 'window.DATA='; cat data.json; } > data.js
 ```
@@ -160,6 +184,7 @@ mamba run -n collagen python build_data.py
 | `data.js` | ✓ | Bundled normalized expression + annotation (`window.DATA`) |
 | `normalize_deseq2.R` | ✓ | DESeq2 size-factor normalization |
 | `detect_oscillators.py` | ✓ | Calls rhythmic genes from the time course |
-| `build_data.py` | ✓ | Joins counts + annotation + osc calls into `data.json` |
+| `detect_tfs.py` | ✓ | Flags transcription factors from GO:0003700 |
+| `build_data.py` | ✓ | Joins counts + annotation + osc + TF calls into `data.json` |
 | `GSE130811_expr.tab.gz` | ✓ | Raw count matrix from GEO |
-| `normalized_counts.tsv`, `oscillation.tsv`, `data.json`, `*.gff.gz`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |
+| `normalized_counts.tsv`, `oscillation.tsv`, `tf.tsv`, `data.json`, `*.gff.gz`, `*.gaf.gz`, `go-basic.obo`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |

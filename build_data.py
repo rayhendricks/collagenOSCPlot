@@ -18,6 +18,13 @@ with open("oscillation.tsv") as f:
     for row in r:
         osc[row["wbgene"]] = (row["osc"] == "1", float(row["period"]))
 
+# --- transcription factors (GO:0003700-defined): set of wbgene ---
+tf = set()
+with open("tf.tsv") as f:
+    next(f)
+    for line in f:
+        tf.add(line.split("\t")[0])
+
 # --- normalized counts ---
 with open("normalized_counts.tsv") as f:
     header = f.readline().rstrip("\n").split("\t")
@@ -42,14 +49,16 @@ with open("normalized_counts.tsv") as f:
         sym, chrom, start, end, strand, bt = ann.get(
             wb, (wb, "?", 0, 0, ".", "unknown"))
         is_osc, period = osc.get(wb, (False, 0.0))
+        is_tf = wb in tf
         genes[wb] = {
             "sym": sym, "chrom": chrom, "start": start, "end": end,
             "strand": strand, "bt": bt,
-            "osc": is_osc, "period": period,
+            "osc": is_osc, "period": period, "tf": is_tf,
             "v": [round(vals[i], 2) for i in main_idx],
             "r": [round(vals[i], 2) for i in rep_idx],
         }
-        index.append({"wb": wb, "sym": sym, "o": 1 if is_osc else 0})
+        index.append({"wb": wb, "sym": sym,
+                      "o": 1 if is_osc else 0, "t": 1 if is_tf else 0})
 
 out = {
     "meta": {
@@ -59,6 +68,7 @@ out = {
         "assembly": "WBcel235 / ce11 (RefSeq GCF_000002985.6)",
         "n_genes": len(genes),
         "n_osc": sum(1 for g in genes.values() if g["osc"]),
+        "n_tf": sum(1 for g in genes.values() if g["tf"]),
     },
     "hours": main_hours,
     "rep_hours": rep_hours,

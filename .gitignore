@@ -23,6 +23,9 @@ gene_annotation.tsv
 normalized_counts.tsv
 size_factors.tsv
 oscillation.tsv
+tf.tsv
+wb.gaf.gz
+go-basic.obo
 data.json
 nohup.out
 
