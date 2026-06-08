@@ -91,24 +91,61 @@ data.json → data.js          loaded by index.html (Plotly dashboard)
 
 ### Oscillator detection (`detect_oscillators.py`)
 "Oscillator" is **computed from the time course itself** — not taken from an external
-list. The molt-cycle oscillation here is sharp (spiky), its period *drifts* (lengthens)
-across development, and only ~4–6 cycles fit in the 5–48 h window, which defeats naive
-FFT-single-bin or fixed-lag autocorrelation scoring. So we detect the biology directly:
+list. The target signal is the *C. elegans* **molt-cycle oscillation**: genes that rise
+and fall rhythmically with a period of roughly one larval stage (~7–8 h). Three
+properties of this real signal break the textbook periodicity tests, and shaped the
+method:
 
-1. `log2(x + 1)`.
-2. Remove the slow developmental trend with a **local moving average** (window ≈ one
-   period, 7 h). A local smoother — unlike a global polynomial fit — does **not** "ring"
-   on a step, so switch-like genes (e.g. `col-19`) are not mistaken for oscillators.
-3. Require several **prominent peaks _and_ troughs** (the signal repeatedly returns to
-   baseline — a switch does not), regularly spaced at a molt-cycle interval (6–10 h),
-   with amplitude ≥ 2.5 log₂ (~5.7-fold).
+| Property of the real signal | Why naive methods fail |
+|---|---|
+| Peaks are **sharp/spiky** (non-sinusoidal) | A single FFT bin sees the energy spread into harmonics → `lin-42` scores ~0.05 |
+| The period **drifts** (lengthens: 7 → 7 → 8 h) | Fixed-lag autocorrelation can't align all cycles → weak/negative score |
+| Only **~4–6 cycles** fit in 5–48 h | Too few cycles for stable spectral/autocorrelation statistics |
 
-**Calibration:** yields **3,062** oscillating genes (cf. ~3,235 high-confidence in
-[Meeuse et al. 2020](https://www.embopress.org/doi/full/10.15252/msb.20209498)),
-recovers 8/8 canonical cyclers tested (`lin-42, mlt-10, dpy-13, bli-1, qua-1, mlt-9,
-noah-1, grd-3`) and rejects 4/4 controls (`act-1, col-19, tba-1, ama-1`). It is a
-deliberately **high-confidence, conservative** heuristic, not a statistical rhythmicity
-test — treat the calls as a curated shortlist, not ground truth.
+So instead of scoring periodicity in the frequency domain, the detector finds the
+biology directly — *regularly spaced peaks that return to baseline.* For each gene
+(operating on the 44 single-replicate hourly samples, 5–48 h):
+
+**1. Log transform.** `y = log2(count + 1)`. Expression amplitude is multiplicative, so
+log space makes a fold-change rhythm look like a constant-amplitude wave; the `+1`
+keeps zeros finite.
+
+**2. Detrend with a *local* moving average.** Subtract a centered 7-h rolling mean
+(`window ≈ one period`) to remove the slow developmental drift while preserving the
+~7-h cycle: `resid = y − rolling_mean(y, 7)`. The choice of a **local** smoother is the
+key trick — a global polynomial fit *rings* (Gibbs-style wiggles) when it tries to follow
+a one-time step, which fakes an oscillation and made switch genes like `col-19` score as
+cyclers. A local average has nothing to ring with: on a step it just tracks the step.
+
+**3. Find prominent peaks _and_ troughs.** On `resid`, a point is a peak if it is a local
+maximum rising at least **30 % of the gene's amplitude** (`amp = max(resid) − min(resid)`)
+above the floor; peaks closer than **4 h** are merged (keep the taller). Troughs are the
+same on `−resid`. Requiring **both** peaks and troughs is what separates an oscillator
+(repeatedly returns to baseline: up–down–up–down) from a **switch** like `col-19` (rises
+once and stays high — many peaks possible, but it never comes back down repeatedly).
+
+**4. Estimate the period.** `period = median of the gaps (in hours) between consecutive
+peaks`. This is the number shown as the `osc ~Nh` badge in the dashboard.
+
+**5. Call it.** A gene is flagged **oscillating** when *all* hold:
+
+| Criterion | Threshold | Purpose |
+|---|---|---|
+| max normalized count | ≥ 16 | ignore genes that never rise above noise |
+| amplitude `amp` | ≥ 2.5 log₂ (~5.7-fold) | require a real, large swing |
+| number of peaks | ≥ 3 | several cycles, not one bump |
+| number of troughs | ≥ 3 | repeatedly returns to baseline (excludes switches) |
+| median peak interval (period) | 6–10 h | the molt-cycle band |
+
+**Calibration & validation.** These thresholds yield **3,062** oscillating genes —
+in line with the ~3,235 high-confidence cyclers in
+[Meeuse et al. 2020](https://www.embopress.org/doi/full/10.15252/msb.20209498). On
+spot-checks it recovers **8/8** canonical cyclers (`lin-42, mlt-10, dpy-13, bli-1, qua-1,
+mlt-9, noah-1, grd-3`) and rejects **4/4** controls (`act-1` — too low amplitude;
+`col-19` — a switch, period out of band; `tba-1`, `ama-1` — flat). It is a deliberately
+**high-confidence, conservative heuristic**, not a statistical rhythmicity test (no
+p-values / FDR) — treat the calls as a curated shortlist, not ground truth. For formal
+rhythmicity one would use RAIN / JTK_CYCLE or a periodic-spline model with replication.
 
 ### Transcription factors (`detect_tfs.py`)
 TF status is **not** inferred from expression — it comes from curated annotation. A gene
