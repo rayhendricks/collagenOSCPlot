@@ -7,13 +7,15 @@
 <style>
   :root { --bg:#0f1117; --panel:#171a23; --fg:#e6e9ef; --muted:#9aa3b2; --accent:#5aa9e6; --line:#262b38; }
   * { box-sizing: border-box; }
+  html, body { height:100%; }
   body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-         background:var(--bg); color:var(--fg); }
-  header { padding:14px 20px; border-bottom:1px solid var(--line); }
+         background:var(--bg); color:var(--fg); display:flex; flex-direction:column; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); flex:0 0 auto; }
   header h1 { margin:0; font-size:16px; font-weight:600; }
   header p { margin:4px 0 0; font-size:12px; color:var(--muted); }
-  .wrap { display:flex; gap:18px; padding:18px 20px; align-items:flex-start; flex-wrap:wrap; }
-  .controls { width:340px; flex:0 0 340px; }
+  .wrap { display:flex; gap:18px; padding:18px 20px; align-items:stretch;
+          flex:1 1 auto; min-height:0; }
+  .controls { width:340px; flex:0 0 340px; overflow-y:auto; }
   .search { position:relative; }
   input[type=text]{ width:100%; padding:10px 12px; font-size:14px; border-radius:8px;
         border:1px solid var(--line); background:var(--panel); color:var(--fg); outline:none; }
@@ -41,7 +43,7 @@
   .scale label { margin-right:14px; cursor:pointer; }
   .meta { margin-top:18px; font-size:12px; color:var(--muted); line-height:1.7; }
   .meta b { color:var(--fg); }
-  #plot { flex:1 1 600px; min-width:480px; height:580px; background:var(--panel);
+  #plot { flex:1 1 600px; min-width:480px; min-height:0; background:var(--panel);
         border:1px solid var(--line); border-radius:10px; }
   .hint { color:var(--muted); font-size:12px; margin-top:10px; }
   a { color:var(--accent); }
@@ -70,7 +72,7 @@
     <div class="scale">
       <b style="font-size:12px;color:var(--muted)">Y-AXIS</b><br>
       <label><input type="radio" name="scale" value="linear" checked> Linear (raw normalized)</label>
-      <label><input type="radio" name="scale" value="log"> Log&#8321;&#8320;</label>
+      <label><input type="radio" name="scale" value="log"> Log&#8321;&#8320; (counts + 1)</label>
     </div>
 
     <div class="meta" id="meta"></div>
@@ -195,7 +197,7 @@ function draw(){
     title:{ text:title, font:{size:15} },
     xaxis:{ title:"hours after plating (25°C)", type:"linear", range:[4,49],
             gridcolor:"#262b38", dtick:5, zeroline:false },
-    yaxis:{ title: scale==="log" ? "norm. counts +1 (log₁₀)" : "norm. counts",
+    yaxis:{ title: scale==="log" ? "log₁₀(norm. counts + 1)" : "norm. counts",
             type: scale, gridcolor:"#262b38", zeroline:false,
             rangemode: scale==="log" ? "normal" : "tozero" },
     legend:{ orientation:"h", y:1.08, x:1, xanchor:"right" },
