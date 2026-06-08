@@ -169,13 +169,19 @@ function draw(){
   if(selected.length === 0){ Plotly.purge("plot"); return; }
   const scale = currentScale();
   const showRep = document.getElementById("showrep").checked;
+  // On a log axis, raw 0 counts are undefined and render as vertical drops to the floor.
+  // Use a +1 pseudocount (log10(x+1)) so unexpressed timepoints sit flat at the baseline
+  // and the line connects smoothly. Linear mode stays raw. Hover always shows the true count.
+  const PSEUDO = 1;
+  const yfor = (arr) => scale === "log" ? arr.map(v => v + PSEUDO) : arr;
   const traces = [];
   selected.forEach(wb => {
     const g = D.genes[wb], c = colorOf[wb];
-    traces.push({ x:D.hours, y:g.v, mode:"lines+markers", name:g.sym,
-                  line:{color:c,width:2}, marker:{size:5,color:c} });
+    traces.push({ x:D.hours, y:yfor(g.v), customdata:g.v, mode:"lines+markers", name:g.sym,
+                  line:{color:c,width:2}, marker:{size:5,color:c},
+                  hovertemplate:"%{fullData.name}: %{customdata:.1f}<extra></extra>" });
     if(showRep){
-      traces.push({ x:D.rep_hours, y:g.r, mode:"markers", name:g.sym+" (rep)",
+      traces.push({ x:D.rep_hours, y:yfor(g.r), mode:"markers", name:g.sym+" (rep)",
                     marker:{size:8,color:c,symbol:"diamond-open",line:{width:1.5}},
                     showlegend:false, hoverinfo:"skip" });
     }
@@ -189,7 +195,7 @@ function draw(){
     title:{ text:title, font:{size:15} },
     xaxis:{ title:"hours after plating (25°C)", type:"linear", range:[4,49],
             gridcolor:"#262b38", dtick:5, zeroline:false },
-    yaxis:{ title: scale==="log" ? "norm. counts (log₁₀)" : "norm. counts",
+    yaxis:{ title: scale==="log" ? "norm. counts +1 (log₁₀)" : "norm. counts",
             type: scale, gridcolor:"#262b38", zeroline:false,
             rangemode: scale==="log" ? "normal" : "tozero" },
     legend:{ orientation:"h", y:1.08, x:1, xanchor:"right" },
