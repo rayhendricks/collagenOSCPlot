@@ -27,6 +27,8 @@ meeuse_osc.tsv
 tf.tsv
 wb.gaf.gz
 go-basic.obo
+GSE52905_footprint_normalized.txt.gz
+GSE52905_footprint_rawCounts.txt.gz
 data.json
 nohup.out
 

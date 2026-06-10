@@ -80,6 +80,27 @@ with open("normalized_counts.tsv") as f:
         index.append({"wb": wb, "sym": sym,
                       "o": 1 if is_osc else 0, "t": 1 if is_tf else 0})
 
+# --- second design: ribosome footprinting (Hendriks et al. 2014, GSE52905) ---
+#     Continuous development, N2, 18-36 h, every 2 h, 10 timepoints (no replicates).
+#     The supplementary matrix is log2 depth-normalized footprint counts; we store
+#     2**x so the values are linear footprint abundance and the dashboard's
+#     linear/log toggle behaves exactly as it does for the mRNA design. This is a
+#     SEPARATE time base (continuous-development hours) and a different quantity
+#     (translation, not transcript) — never overlaid on the mRNA axis.
+import gzip
+fp_series = {}
+fp_hours = []
+with gzip.open("GSE52905_footprint_normalized.txt.gz", "rt") as f:
+    fp_cols = f.readline().rstrip("\n").split("\t")[1:]
+    fp_hours = [int(re.search(r"_(\d+)h", c).group(1)) for c in fp_cols]
+    for line in f:
+        p = line.rstrip("\n").split("\t")
+        wb = p[0]
+        if wb not in genes:        # keep searchable genes only (shared annotation)
+            continue
+        fp_series[wb] = {"v": [round(2.0 ** float(x), 2) for x in p[1:]]}
+print(f"footprint genes mapped to annotation: {len(fp_series)}  hours: {fp_hours}")
+
 out = {
     "meta": {
         "series": "GSE130811",
@@ -109,6 +130,18 @@ out = {
             "hours": main_hours,
             "rep_hours": rep_hours,
             "series": series,
+        },
+        "footprint_contDev": {
+            "meta": {
+                "label": "Continuous development — ribosome footprinting (Hendriks 2014)",
+                "series": "GSE52905",
+                "assay": "Ribo-seq (ribosome footprinting)",
+                "units": "norm. footprint",
+                "timeref": "hours of continuous development (25°C)",
+            },
+            "hours": fp_hours,
+            "rep_hours": [],
+            "series": fp_series,
         },
     },
 }

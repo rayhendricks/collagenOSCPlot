@@ -37,6 +37,13 @@ Opening the file directly works because the data is loaded via `<script src="dat
 (not `fetch`), so there are no `file://` CORS issues.
 
 ### Using the dashboard
+- **Dataset** — pick the experimental design from the dropdown. Two are wired up:
+  the **mRNA** continuous-development time course (Meeuse 2020, 5–48 h) and the
+  **ribosome-footprinting** continuous-development course (Hendriks 2014, 18–36 h).
+  Switching reswaps the axes, units, and timepoints and redraws your selected genes.
+  Each design is **normalized independently** and on a **different time base**, so
+  absolute heights are not comparable across datasets — the rhythm and phase are.
+  A gene not measured in the active dataset shows *"no data in this dataset"* on its chip.
 - **Add a gene** — type in the search box (symbol or WBGene ID) and pick from the list.
   Add multiple genes to overlay them; each gets its own color.
 - **Remove** — click the `×` on a gene chip, or **Clear all**.
@@ -87,11 +94,29 @@ meeuse_EV1.xlsx (Dataset EV1)
         │  parse_meeuse.py      → meeuse_osc.tsv        (PRIMARY osc + amplitude + phase)
 wb.gaf.gz + go-basic.obo
         │  detect_tfs.py        → tf.tsv                (transcription factors, GO:0003700)
+        │
+GSE52905_..._Footprint_normalized.txt.gz   ribosome footprinting (Hendriks 2014)
+        │  (read directly by build_data.py as a second selectable dataset)
         ▼
-        │  build_data.py  (join counts + annotation + osc + TF calls on WBGene ID)
+        │  build_data.py  (shared gene annotation + osc + TF; one time-course
+        │                  bundle per dataset, joined on WBGene ID)
         ▼
 data.json → data.js          loaded by index.html (Plotly dashboard)
 ```
+
+### Datasets (the dashboard's dropdown)
+The dashboard hosts several **independently-normalized designs** rather than merging
+incomparable time courses. A gene's annotation and osc/TF flags are stored once
+(dataset-independent); each dataset carries only its own time series, keyed on WBGene ID.
+
+| Dataset | Source | Assay | Window | Quantity |
+|---|---|---|---|---|
+| Continuous development — mRNA | GSE130811 (Meeuse 2020) | mRNA-seq | 5–48 h post-plating, hourly | DESeq2 norm. counts |
+| Continuous development — footprinting | GSE52905 (Hendriks 2014) | Ribo-seq | 18–36 h cont. dev., every 2 h | log2 depth-norm. footprint counts (stored linearized) |
+
+Both are N2 @25 °C, but the **time bases differ** (hours after plating vs. hours of
+continuous development) and the **measured quantity differs** (transcript abundance vs.
+ribosome occupancy), so they are never overlaid on one axis — you switch between them.
 
 ### Oscillator calls — primary: Meeuse et al. 2020 (`parse_meeuse.py`)
 The dashboard's `osc` flag is the **authoritative, peer-reviewed classification** from
@@ -231,7 +256,11 @@ curl -sL "http://current.geneontology.org/annotations/wb.gaf.gz" -o wb.gaf.gz
 curl -sL "http://purl.obolibrary.org/obo/go/go-basic.obo" -o go-basic.obo
 mamba run -n collagen python detect_tfs.py
 
-# 7. build the dashboard data  ->  data.json, then wrap into data.js
+# 7. second dataset: ribosome footprinting (Hendriks 2014, GSE52905)
+curl -sL "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE52905&format=file&file=GSE52905%5Fce%5FgeneExpression%5FFootprint%5Fnormalized%2Etxt%2Egz" \
+  -o GSE52905_footprint_normalized.txt.gz
+
+# 8. build the dashboard data  ->  data.json, then wrap into data.js
 mamba run -n collagen python build_data.py
 { printf 'window.DATA='; cat data.json; } > data.js
 ```
@@ -249,6 +278,6 @@ mamba run -n collagen python build_data.py
 | `meeuse_EV1.xlsx` | ✓ | Meeuse et al. 2020 Dataset EV1 (CC-BY 4.0) |
 | `detect_oscillators.py` | ✓ | Computes osc cross-check from the time course |
 | `detect_tfs.py` | ✓ | Flags transcription factors from GO:0003700 |
-| `build_data.py` | ✓ | Joins counts + annotation + osc + TF calls into `data.json` |
+| `build_data.py` | ✓ | Builds shared annotation + one time-course bundle per dataset into `data.json` |
 | `GSE130811_expr.tab.gz` | ✓ | Raw count matrix from GEO |
-| `normalized_counts.tsv`, `oscillation.tsv`, `meeuse_osc.tsv`, `tf.tsv`, `data.json`, `*.gff.gz`, `*.gaf.gz`, `go-basic.obo`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |
+| `normalized_counts.tsv`, `oscillation.tsv`, `meeuse_osc.tsv`, `tf.tsv`, `data.json`, `*.gff.gz`, `*.gaf.gz`, `go-basic.obo`, `GSE52905_footprint_*.txt.gz`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |
