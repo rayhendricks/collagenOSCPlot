@@ -46,7 +46,7 @@ Opening the file directly works because the data is loaded via `<script src="dat
 - **Transcription factors only** — restrict the search to genes with DNA-binding
   transcription-factor activity (see *Transcription factors* below); these carry a
   `TF` badge. Combine with **oscillators only** to find the rhythmic TFs (the
-  oscillator's own regulators — 82 genes).
+  oscillator's own regulators — 125 genes).
 - **Replicate points** — 7 timepoints (37, 38, 39, 41, 45, 47, 48 h) have a second
   replicate, shown as open diamonds. Toggle with the checkbox.
 - **Linear vs Log₁₀** — linear shows how big a peak is; log shows the rhythm and is the

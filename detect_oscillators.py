@@ -14,8 +14,8 @@ fixed-lag autocorrelation. We instead detect the biology directly:
      to baseline -- a switch does not), regularly spaced at a molt-cycle interval
      (~6-10 h), with real amplitude.
 
-Calibration: yields ~3,062 oscillating genes (cf. ~3,235 high-confidence in
-Meeuse et al. 2020), recovers 8/8 canonical cyclers (lin-42, mlt-10, dpy-13,
+Calibration: yields ~3,062 oscillating genes (cf. 3,739 in Meeuse et al.
+2020), recovers 8/8 canonical cyclers (lin-42, mlt-10, dpy-13,
 bli-1, qua-1, mlt-9, noah-1, grd-3) and excludes 4/4 controls (act-1, col-19,
 tba-1, ama-1)."""
 import re
