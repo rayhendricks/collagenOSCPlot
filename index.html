@@ -16,6 +16,11 @@
   .wrap { display:flex; gap:18px; padding:18px 20px; align-items:stretch;
           flex:1 1 auto; min-height:0; }
   .controls { width:340px; flex:0 0 340px; overflow-y:auto; }
+  .dataset { margin-bottom:14px; }
+  .dataset select { width:100%; margin-top:6px; padding:9px 10px; font-size:13px; border-radius:8px;
+        border:1px solid var(--line); background:var(--panel); color:var(--fg); outline:none; cursor:pointer; }
+  .dataset select:focus { border-color:var(--accent); }
+  .dshint { margin-top:6px; font-size:11px; color:var(--muted); line-height:1.5; }
   .search { position:relative; }
   input[type=text]{ width:100%; padding:10px 12px; font-size:14px; border-radius:8px;
         border:1px solid var(--line); background:var(--panel); color:var(--fg); outline:none; }
@@ -64,6 +69,12 @@
 
 <div class="wrap">
   <div class="controls">
+    <div class="dataset">
+      <b style="font-size:12px;color:var(--muted)">DATASET</b><br>
+      <select id="dataset"></select>
+      <div class="dshint" id="dshint"></div>
+    </div>
+
     <div class="search">
       <input id="q" type="text" autocomplete="off" spellcheck="false"
              placeholder="Add a gene (e.g. col-19, lin-42, WBGene00000608)…">
@@ -102,18 +113,44 @@ const idx = D.index;
 const palette = ["#5aa9e6","#e6915a","#7bc86c","#c678dd","#e6c84f","#56b6c2",
                  "#e06c75","#d19a66","#98c379","#61afef","#c9a0ff","#ef9a9a"];
 
+let activeDS = D.default_dataset;
+function ds(){ return D.datasets[activeDS]; }
+// per-gene time course for the active dataset (undefined if the gene isn't in it)
+function sv(wb){ return ds().series[wb]; }
+
 document.getElementById("subtitle").textContent =
   `${D.meta.series} · ${D.meta.normalization} · ${D.meta.assembly} · ${D.meta.n_genes.toLocaleString()} genes`;
-document.getElementById("meta").innerHTML =
-  `<b>Dataset:</b> ${D.meta.title}<br>` +
-  `<b>Normalization:</b> ${D.meta.normalization}<br>` +
-  `<b>Annotation:</b> ${D.meta.assembly}<br>` +
-  `<b>Timepoints:</b> ${D.hours[0]}–${D.hours[D.hours.length-1]} h (hourly), +${D.rep_hours.length} replicates<br>` +
-  `<b>Oscillators:</b> ${D.meta.n_osc.toLocaleString()} genes — Meeuse et al. 2020 (cosine fit; with amplitude + peak phase)<br>` +
-  `<span style="color:var(--muted)">cross-check: ${D.meta.n_oscC.toLocaleString()} by our computed method (see README)</span><br>` +
-  `<b>Transcription factors:</b> ${D.meta.n_tf.toLocaleString()} genes (GO:0003700, DNA-binding TF activity)`;
+function renderMeta(){
+  const m = ds().meta;
+  const reps = ds().rep_hours ? ds().rep_hours.length : 0;
+  document.getElementById("meta").innerHTML =
+    `<b>Dataset:</b> ${m.label}<br>` +
+    `<b>Assay:</b> ${m.assay} · ${m.series}<br>` +
+    `<b>Normalization:</b> ${D.meta.normalization}<br>` +
+    `<b>Annotation:</b> ${D.meta.assembly}<br>` +
+    `<b>Timepoints:</b> ${ds().hours[0]}–${ds().hours[ds().hours.length-1]} h` +
+      (reps ? ` (hourly), +${reps} replicates` : "") + `<br>` +
+    `<b>Oscillators:</b> ${D.meta.n_osc.toLocaleString()} genes — Meeuse et al. 2020 (cosine fit; with amplitude + peak phase)<br>` +
+    `<span style="color:var(--muted)">cross-check: ${D.meta.n_oscC.toLocaleString()} by our computed method (see README)</span><br>` +
+    `<b>Transcription factors:</b> ${D.meta.n_tf.toLocaleString()} genes (GO:0003700, DNA-binding TF activity)`;
+}
 document.getElementById("osccount").textContent = `(${D.meta.n_osc.toLocaleString()})`;
 document.getElementById("tfcount").textContent = `(${D.meta.n_tf.toLocaleString()})`;
+
+// --- dataset selector ---
+const dsSel = document.getElementById("dataset");
+dsSel.innerHTML = Object.entries(D.datasets)
+  .map(([id, d]) => `<option value="${id}">${d.meta.label}</option>`).join("");
+dsSel.value = activeDS;
+function renderDsHint(){
+  const m = ds().meta;
+  document.getElementById("dshint").textContent =
+    `${m.assay} · ${m.timeref}. Designs are normalized independently — absolute heights are not comparable across datasets; the rhythm and phase are.`;
+}
+dsSel.addEventListener("change", () => {
+  activeDS = dsSel.value;
+  renderMeta(); renderDsHint(); renderChips(); draw();
+});
 
 const q = document.getElementById("q");
 const sug = document.getElementById("suggest");
@@ -185,8 +222,9 @@ function renderChips(){
     const g = D.genes[wb];
     const coord = g.chrom==="?" ? "no coord" : `chr${g.chrom}:${g.start.toLocaleString()}`;
     const oscNote = g.osc ? ` · osc φ${Math.round(g.phase)}° amp ${g.amp}` : "";
+    const noData = sv(wb) ? "" : ` · <span style="color:#e06c75">no data in this dataset</span>`;
     return `<span class="chip"><span class="dot" style="background:${colorOf[wb]}"></span>` +
-           `<span>${g.sym} <small>${coord}${oscNote}</small></span>` +
+           `<span>${g.sym} <small>${coord}${oscNote}${noData}</small></span>` +
            `<span class="x" data-wb="${wb}">×</span></span>`;
   }).join("");
   [...chipsEl.querySelectorAll(".x")].forEach(x => x.onclick = () => removeGene(x.dataset.wb));
@@ -203,28 +241,31 @@ function draw(){
   // and the line connects smoothly. Linear mode stays raw. Hover always shows the true count.
   const PSEUDO = 1;
   const yfor = (arr) => scale === "log" ? arr.map(v => v + PSEUDO) : arr;
+  const hours = ds().hours, repHours = ds().rep_hours || [], units = ds().meta.units;
   const traces = [];
   selected.forEach(wb => {
+    const s = sv(wb); if(!s) return;        // gene not measured in this dataset
     const g = D.genes[wb], c = colorOf[wb];
-    traces.push({ x:D.hours, y:yfor(g.v), customdata:g.v, mode:"lines+markers", name:g.sym,
+    traces.push({ x:hours, y:yfor(s.v), customdata:s.v, mode:"lines+markers", name:g.sym,
                   line:{color:c,width:2}, marker:{size:5,color:c},
                   hovertemplate:"%{fullData.name}: %{customdata:.1f}<extra></extra>" });
-    if(showRep){
-      traces.push({ x:D.rep_hours, y:yfor(g.r), mode:"markers", name:g.sym+" (rep)",
+    if(showRep && s.r && s.r.length){
+      traces.push({ x:repHours, y:yfor(s.r), mode:"markers", name:g.sym+" (rep)",
                     marker:{size:8,color:c,symbol:"diamond-open",line:{width:1.5}},
                     showlegend:false, hoverinfo:"skip" });
     }
   });
   const title = selected.length===1
-      ? `${D.genes[selected[0]].sym} — normalized expression`
-      : `Normalized expression — ${selected.length} genes`;
+      ? `${D.genes[selected[0]].sym} — ${units}`
+      : `${units} — ${selected.length} genes`;
+  const xpad = 1, xlo = hours[0]-xpad, xhi = hours[hours.length-1]+xpad;
   const layout = {
     paper_bgcolor:"#171a23", plot_bgcolor:"#171a23", font:{color:"#e6e9ef"},
     margin:{t:50,r:20,b:50,l:64},
     title:{ text:title, font:{size:15} },
-    xaxis:{ title:"hours after plating (25°C)", type:"linear", range:[4,49],
+    xaxis:{ title:ds().meta.timeref, type:"linear", range:[xlo,xhi],
             gridcolor:"#262b38", dtick:5, zeroline:false },
-    yaxis:{ title: scale==="log" ? "log₁₀(norm. counts + 1)" : "norm. counts",
+    yaxis:{ title: scale==="log" ? `log₁₀(${units} + 1)` : units,
             type: scale, gridcolor:"#262b38", zeroline:false,
             rangemode: scale==="log" ? "normal" : "tozero" },
     legend:{ orientation:"h", y:1.08, x:1, xanchor:"right" },
@@ -236,6 +277,8 @@ function draw(){
 document.querySelectorAll('input[name=scale]').forEach(r => r.addEventListener("change", draw));
 document.getElementById("showrep").addEventListener("change", draw);
 document.getElementById("clear").addEventListener("click", () => { selected=[]; renderChips(); draw(); });
+
+renderMeta(); renderDsHint();
 
 // default view: a couple of canonical oscillating genes
 ["lin-42","col-19"].forEach(sym => {

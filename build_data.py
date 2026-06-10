@@ -51,7 +51,10 @@ with open("normalized_counts.tsv") as f:
         else:
             main_idx.append(i); main_hours.append(hr)
 
+    # genes  = dataset-independent annotation + osc/TF flags (computed once, shared)
+    # series = per-dataset time course (v = main, r = replicates), keyed by WBGene ID
     genes = {}
+    series = {}
     index = []
     for line in f:
         parts = line.rstrip("\n").split("\t")
@@ -69,6 +72,8 @@ with open("normalized_counts.tsv") as f:
             "sym": sym, "chrom": chrom, "start": start, "end": end,
             "strand": strand, "bt": bt,
             "osc": is_osc, "amp": amp, "phase": phase, "oscC": is_oscC, "tf": is_tf,
+        }
+        series[wb] = {
             "v": [round(vals[i], 2) for i in main_idx],
             "r": [round(vals[i], 2) for i in rep_idx],
         }
@@ -87,10 +92,25 @@ out = {
         "n_tf": sum(1 for g in genes.values() if g["tf"]),
         "osc_source": "Meeuse et al. 2020 (Mol Syst Biol), Dataset EV1 — cosine fit",
     },
-    "hours": main_hours,
-    "rep_hours": rep_hours,
     "genes": genes,
     "index": index,
+    # selectable designs; each bundle owns its own axes/units so incomparable
+    # time courses (e.g. a future Ribo-seq dauer-exit series) never share an axis.
+    "default_dataset": "meeuse_5_48",
+    "datasets": {
+        "meeuse_5_48": {
+            "meta": {
+                "label": "Continuous development — mRNA (Meeuse 2020)",
+                "series": "GSE130811",
+                "assay": "mRNA-seq",
+                "units": "norm. counts",
+                "timeref": "hours after plating (25°C)",
+            },
+            "hours": main_hours,
+            "rep_hours": rep_hours,
+            "series": series,
+        },
+    },
 }
 with open("data.json", "w") as f:
     json.dump(out, f, separators=(",", ":"))
