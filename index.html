@@ -33,6 +33,18 @@
   #suggest .sym { font-weight:600; }
   #suggest .wb { color:var(--muted); font-size:11px; margin-left:6px; }
   #suggest .bt { color:var(--muted); font-size:11px; float:right; }
+  #suggest .pick { pointer-events:none; vertical-align:middle; margin-right:8px; accent-color:var(--accent); }
+  #suggest div.added { opacity:.55; cursor:default; }
+  #suggest div.added:hover { background:none; }
+  #suggest .addedtag { color:var(--muted); font-size:10px; margin-left:6px; }
+  #suggest .sugfoot { position:sticky; bottom:0; display:flex; align-items:center; gap:10px;
+        padding:8px 12px; background:var(--panel); border-top:1px solid var(--line); cursor:default; }
+  #suggest .sugfoot:hover { background:var(--panel); }
+  #suggest .sugfoot button.add { background:var(--accent); border:none; color:var(--bg); border-radius:6px;
+        padding:7px 12px; font-size:12px; font-weight:600; cursor:pointer; }
+  #suggest .sugfoot button.clearp { background:none; border:1px solid var(--line); color:var(--muted);
+        border-radius:6px; padding:7px 10px; font-size:12px; cursor:pointer; }
+  #suggest .sugfoot button.clearp:hover { color:var(--fg); border-color:var(--accent); }
   .osc { color:#7bc86c; font-size:10px; font-weight:600; margin-left:6px;
          border:1px solid #2f5d34; border-radius:8px; padding:0 5px; }
   .tf  { color:#c9a0ff; font-size:10px; font-weight:600; margin-left:6px;
@@ -94,12 +106,13 @@
 
     <div class="scale">
       <b style="font-size:12px;color:var(--muted)">Y-AXIS</b><br>
-      <label><input type="radio" name="scale" value="linear" checked> Linear (raw normalized)</label>
-      <label><input type="radio" name="scale" value="log"> Log&#8321;&#8320; (counts + 1)</label>
+      <label><input type="radio" name="scale" value="linear" checked> Linear</label>
+      <label><input type="radio" name="scale" value="log"> Log&#8321;&#8320;</label>
     </div>
 
     <div class="meta" id="meta"></div>
-    <div class="hint">Add several genes to compare their rhythms. Linear shows absolute amplitude;
+    <div class="hint">Tick several suggestions and hit <b>Add selected</b> to plot them together
+       (or just press Enter to add one). Linear shows absolute amplitude;
        log reveals fold-change rhythm in low-expressed genes.</div>
   </div>
 
@@ -126,10 +139,11 @@ function renderMeta(){
   document.getElementById("meta").innerHTML =
     `<b>Dataset:</b> ${m.label}<br>` +
     `<b>Assay:</b> ${m.assay} · ${m.series}<br>` +
-    `<b>Normalization:</b> ${D.meta.normalization}<br>` +
+    `<b>Normalization:</b> ${m.norm || D.meta.normalization}<br>` +
     `<b>Annotation:</b> ${D.meta.assembly}<br>` +
-    `<b>Timepoints:</b> ${ds().hours[0]}–${ds().hours[ds().hours.length-1]} h` +
-      (reps ? ` (hourly), +${reps} replicates` : "") + `<br>` +
+    `<b>Timepoints:</b> ` +
+      (m.tp_label || `${ds().hours[0]}–${ds().hours[ds().hours.length-1]} h` +
+        (reps ? ` (hourly), +${reps} replicates` : "")) + `<br>` +
     `<b>Oscillators:</b> ${D.meta.n_osc.toLocaleString()} genes — Meeuse et al. 2020 (cosine fit; with amplitude + peak phase)<br>` +
     `<span style="color:var(--muted)">cross-check: ${D.meta.n_oscC.toLocaleString()} by our computed method (see README)</span><br>` +
     `<b>Transcription factors:</b> ${D.meta.n_tf.toLocaleString()} genes (GO:0003700, DNA-binding TF activity)`;
@@ -156,7 +170,8 @@ const q = document.getElementById("q");
 const sug = document.getElementById("suggest");
 const chipsEl = document.getElementById("chips");
 
-let selected = [];      // ordered list of WBGene IDs
+let selected = [];      // ordered list of WBGene IDs on the plot
+let pending = new Set(); // ticked-but-not-yet-added genes (accumulates across searches)
 let colorOf = {};       // wbgene -> color (stable even after removals)
 let nextColor = 0;
 let matches = [];
@@ -180,18 +195,46 @@ function search(term){
 }
 
 function renderSuggest(){
-  if(matches.length === 0){ sug.style.display="none"; return; }
-  sug.innerHTML = matches.map((e,i) => {
+  // Show the dropdown when there are matches OR when genes are ticked (so the
+  // "Add selected" footer stays reachable even after the search box is cleared).
+  if(matches.length === 0 && pending.size === 0){ sug.style.display="none"; sug.innerHTML=""; return; }
+  let html = matches.map((e,i) => {
     const g = D.genes[e.wb];
-    const chosen = selected.includes(e.wb) ? " ✓" : "";
+    const already = selected.includes(e.wb);      // already on the plot
+    const checked = already || pending.has(e.wb);
+    const cls = [i===activeIdx?'active':'', already?'added':''].filter(Boolean).join(' ');
+    const tag = already ? `<span class="addedtag">added</span>` : "";
     const oscTag = g.osc ? `<span class="osc">osc${g.phase!=null?` φ${Math.round(g.phase)}°`:""}</span>` : "";
     const tfTag = g.tf ? `<span class="tf">TF</span>` : "";
-    return `<div data-wb="${e.wb}" class="${i===activeIdx?'active':''}">` +
-           `<span class="sym">${e.sym}${chosen}</span>${oscTag}${tfTag}<span class="wb">${e.wb}</span>` +
+    return `<div data-wb="${e.wb}" class="${cls}">` +
+           `<input type="checkbox" class="pick" ${checked?'checked':''} ${already?'disabled':''}>` +
+           `<span class="sym">${e.sym}</span>${tag}${oscTag}${tfTag}<span class="wb">${e.wb}</span>` +
            `<span class="bt">${g.bt}</span></div>`;
   }).join("");
+  if(pending.size > 0){
+    html += `<div class="sugfoot"><button class="add">Add selected (${pending.size})</button>` +
+            `<button class="clearp">clear</button></div>`;
+  }
+  sug.innerHTML = html;
   sug.style.display = "block";
-  [...sug.children].forEach(c => c.onclick = () => addGene(c.dataset.wb));
+  // Clicking a row toggles its tick (does not add yet); already-plotted rows are inert.
+  // stopPropagation is essential: re-rendering on toggle detaches the clicked node, which
+  // would otherwise make the document outside-click handler fire and collapse the list —
+  // i.e. the dropdown would "close" after a single tick. Stopping the bubble keeps it open.
+  [...sug.querySelectorAll('div[data-wb]')].forEach(c => c.onclick = (ev) => {
+    ev.stopPropagation();
+    const wb = c.dataset.wb;
+    if(!selected.includes(wb)) togglePending(wb);
+  });
+  const addBtn = sug.querySelector('.sugfoot .add');
+  if(addBtn) addBtn.onclick = (ev) => { ev.stopPropagation(); commitPending(); };
+  const clearBtn = sug.querySelector('.sugfoot .clearp');
+  if(clearBtn) clearBtn.onclick = (ev) => { ev.stopPropagation(); pending.clear(); renderSuggest(); };
+}
+
+function togglePending(wb){
+  if(pending.has(wb)) pending.delete(wb); else pending.add(wb);
+  const top = sug.scrollTop; renderSuggest(); sug.scrollTop = top;   // keep scroll position while ticking
 }
 
 q.addEventListener("input", () => { matches = search(q.value); activeIdx = -1; renderSuggest(); });
@@ -202,18 +245,39 @@ q.addEventListener("keydown", (e) => {
   if(sug.style.display==="none") return;
   if(e.key==="ArrowDown"){ activeIdx=Math.min(activeIdx+1,matches.length-1); renderSuggest(); e.preventDefault(); }
   else if(e.key==="ArrowUp"){ activeIdx=Math.max(activeIdx-1,0); renderSuggest(); e.preventDefault(); }
-  else if(e.key==="Enter"){ const pick = matches[activeIdx>=0?activeIdx:0]; if(pick) addGene(pick.wb); }
+  else if(e.key===" " && activeIdx>=0){          // Space ticks the highlighted row
+    const pick = matches[activeIdx];
+    if(pick && !selected.includes(pick.wb)) togglePending(pick.wb);
+    e.preventDefault();
+  }
+  else if(e.key==="Enter"){                       // commit ticked genes, else add the active one
+    if(pending.size) commitPending();
+    else { const pick = matches[activeIdx>=0?activeIdx:0]; if(pick) addGene(pick.wb); }
+    e.preventDefault();
+  }
   else if(e.key==="Escape"){ sug.style.display="none"; }
 });
-document.addEventListener("click", (e) => { if(!sug.contains(e.target) && e.target!==q) sug.style.display="none"; });
+document.addEventListener("click", (e) => {
+  if(sug.contains(e.target) || e.target===q) return;
+  if(pending.size){ matches = []; renderSuggest(); }   // collapse to just the "Add selected" footer
+  else { sug.style.display="none"; }
+});
 
-function addGene(wb){
+function addGeneRaw(wb){          // mutate state only; no DOM/redraw (for batched adds)
   if(!selected.includes(wb)){
     selected.push(wb);
     if(!colorOf[wb]){ colorOf[wb] = palette[nextColor % palette.length]; nextColor++; }
   }
-  q.value = ""; matches = []; sug.style.display = "none"; q.focus();
-  renderChips(); draw();
+}
+function resetSearch(){ pending.clear(); q.value = ""; matches = []; sug.style.display = "none";
+                        sug.innerHTML = ""; q.focus(); renderChips(); draw(); }
+function addGene(wb){            // single immediate add (Enter / programmatic seed)
+  addGeneRaw(wb); resetSearch();
+}
+function commitPending(){        // add every ticked gene in one go
+  if(pending.size === 0) return;
+  pending.forEach(addGeneRaw);
+  resetSearch();
 }
 function removeGene(wb){ selected = selected.filter(x => x !== wb); renderChips(); draw(); }
 
@@ -239,7 +303,7 @@ function draw(){
   // On a log axis, raw 0 counts are undefined and render as vertical drops to the floor.
   // Use a +1 pseudocount (log10(x+1)) so unexpressed timepoints sit flat at the baseline
   // and the line connects smoothly. Linear mode stays raw. Hover always shows the true count.
-  const PSEUDO = 1;
+  const PSEUDO = ds().meta.pseudo ?? 1;   // per-dataset log floor (set in build_data.py)
   const yfor = (arr) => scale === "log" ? arr.map(v => v + PSEUDO) : arr;
   const hours = ds().hours, repHours = ds().rep_hours || [], units = ds().meta.units;
   const traces = [];
@@ -259,15 +323,37 @@ function draw(){
       ? `${D.genes[selected[0]].sym} — ${units}`
       : `${units} — ${selected.length} genes`;
   const xpad = 1, xlo = hours[0]-xpad, xhi = hours[hours.length-1]+xpad;
+  // Stage designs (embryo) carry explicit tickvals/ticktext (1-/2-/4-/8-cell);
+  // hourly designs fall back to a fixed 5 h tick spacing.
+  const xmeta = ds().meta;
+  const xaxis = { title:xmeta.timeref, type:"linear", range:[xlo,xhi],
+                  gridcolor:"#262b38", zeroline:false };
+  if(xmeta.tickvals){ xaxis.tickvals = xmeta.tickvals; xaxis.ticktext = xmeta.ticktext || xmeta.tickvals; }
+  else { xaxis.dtick = 5; }
+  // Y-axis. Log mode frames only the *selected* genes between whole decades (so one
+  // very-high gene elsewhere in the dataset can't flatten everything), pins zeros to
+  // the bottom decade via the per-dataset pseudocount, and uses clean 1/10/100 ticks.
+  let yaxis;
+  if(scale === "log"){
+    const ys = traces.flatMap(t => t.y).filter(v => v > 0 && isFinite(v));
+    yaxis = { title:`${units} (log₁₀)`, type:"log", gridcolor:"#262b38",
+              zeroline:false, dtick:1 };
+    if(ys.length){
+      let lo = Math.floor(Math.log10(Math.min(...ys)));
+      let hi = Math.ceil (Math.log10(Math.max(...ys)));
+      if(hi <= lo) hi = lo + 1;            // guarantee at least one decade of height
+      yaxis.range = [lo, hi];
+    }
+  } else {
+    yaxis = { title:units, type:"linear", gridcolor:"#262b38",
+              zeroline:false, rangemode:"tozero" };
+  }
   const layout = {
     paper_bgcolor:"#171a23", plot_bgcolor:"#171a23", font:{color:"#e6e9ef"},
     margin:{t:50,r:20,b:50,l:64},
     title:{ text:title, font:{size:15} },
-    xaxis:{ title:ds().meta.timeref, type:"linear", range:[xlo,xhi],
-            gridcolor:"#262b38", dtick:5, zeroline:false },
-    yaxis:{ title: scale==="log" ? `log₁₀(${units} + 1)` : units,
-            type: scale, gridcolor:"#262b38", zeroline:false,
-            rangemode: scale==="log" ? "normal" : "tozero" },
+    xaxis,
+    yaxis,
     legend:{ orientation:"h", y:1.08, x:1, xanchor:"right" },
     hovermode:"x unified",
   };
@@ -276,7 +362,8 @@ function draw(){
 
 document.querySelectorAll('input[name=scale]').forEach(r => r.addEventListener("change", draw));
 document.getElementById("showrep").addEventListener("change", draw);
-document.getElementById("clear").addEventListener("click", () => { selected=[]; renderChips(); draw(); });
+document.getElementById("clear").addEventListener("click", () => {
+  selected=[]; pending.clear(); renderChips(); renderSuggest(); draw(); });
 
 renderMeta(); renderDsHint();
 

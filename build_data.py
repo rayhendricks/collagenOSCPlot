@@ -101,6 +101,37 @@ with gzip.open("GSE52905_footprint_normalized.txt.gz", "rt") as f:
         fp_series[wb] = {"v": [round(2.0 ** float(x), 2) for x in p[1:]]}
 print(f"footprint genes mapped to annotation: {len(fp_series)}  hours: {fp_hours}")
 
+# --- third & fourth designs: early-embryo WT (GSE281412, Cenik lab) ---
+#     RiboITP ribosome profiling + matched total RNA-seq across the first
+#     embryonic divisions (1/2/4/8-cell), N2 only (OMA-1 mutant dropped).
+#     parse_riboseq_embryo.py emits gene x sample CPM TSVs with columns named
+#     c{cells}_{rep}. The "time base" here is *cell number* (1,2,4,8), not hours,
+#     and each design is CPM-normalized independently — so each gets its own
+#     bundle/axes and is never overlaid on the continuous-development designs.
+#     v = per-stage mean (4 points); r = every replicate, drawn at its stage x.
+def load_embryo(path):
+    with open(path) as f:
+        hdr = f.readline().rstrip("\n").split("\t")[1:]
+        stage_of_col = [int(re.match(r"c(\d+)_", c).group(1)) for c in hdr]
+        stages = sorted(set(stage_of_col))                  # [1, 2, 4, 8]
+        cols_by_stage = {s: [i for i, st in enumerate(stage_of_col) if st == s]
+                         for s in stages}
+        es = {}
+        for line in f:
+            p = line.rstrip("\n").split("\t")
+            wb = p[0]
+            if wb not in genes:        # keep searchable genes only (shared annotation)
+                continue
+            vals = [float(x) for x in p[1:]]
+            mean = [round(sum(vals[i] for i in cols_by_stage[s]) / len(cols_by_stage[s]), 2)
+                    for s in stages]
+            es[wb] = {"v": mean, "r": [round(v, 2) for v in vals]}
+    print(f"embryo {path}: {len(es)} genes, stages {stages}, {len(stage_of_col)} samples")
+    return stages, stage_of_col, es
+
+emb_rna_x,  emb_rna_rep,  emb_rna_series  = load_embryo("embryo_rnaseq.tsv")
+emb_ribo_x, emb_ribo_rep, emb_ribo_series = load_embryo("embryo_riboseq.tsv")
+
 out = {
     "meta": {
         "series": "GSE130811",
@@ -125,6 +156,8 @@ out = {
                 "series": "GSE130811",
                 "assay": "mRNA-seq",
                 "units": "norm. counts",
+                "pseudo": 1,            # DESeq2 floor ~1 (min nonzero 0.75)
+                "norm": "DESeq2 median-of-ratios (size-factor) normalized counts",
                 "timeref": "hours after plating (25°C)",
             },
             "hours": main_hours,
@@ -137,11 +170,47 @@ out = {
                 "series": "GSE52905",
                 "assay": "Ribo-seq (ribosome footprinting)",
                 "units": "norm. footprint",
+                "pseudo": 1,            # no zeros in this design; +1 is negligible vs min 8
+                "norm": "log2 depth-normalized footprint counts (stored linearized)",
                 "timeref": "hours of continuous development (25°C)",
             },
             "hours": fp_hours,
             "rep_hours": [],
             "series": fp_series,
+        },
+        "embryo_rna": {
+            "meta": {
+                "label": "Early embryo — total RNA-seq (GSE281412)",
+                "series": "GSE281412",
+                "assay": "total RNA-seq",
+                "units": "RNA CPM",
+                "pseudo": 1,            # 1 CPM detection floor
+                "norm": "whole-transcript counts, depth-normalized to CPM per sample",
+                "timeref": "early-embryo stage (cell number, N2 @20°C)",
+                "tickvals": [1, 2, 4, 8],
+                "ticktext": ["1-cell", "2-cell", "4-cell", "8-cell"],
+                "tp_label": "1-, 2-, 4-, 8-cell (3 reps each)",
+            },
+            "hours": emb_rna_x,
+            "rep_hours": emb_rna_rep,
+            "series": emb_rna_series,
+        },
+        "embryo_ribo": {
+            "meta": {
+                "label": "Early embryo — ribosome profiling (RiboITP, GSE281412)",
+                "series": "GSE281412",
+                "assay": "Ribo-seq (RiboITP footprinting)",
+                "units": "footprint CPM",
+                "pseudo": 1,            # 1 footprint-CPM floor
+                "norm": "CDS footprint counts, depth-normalized to CPM per sample",
+                "timeref": "early-embryo stage (cell number, N2 @20°C)",
+                "tickvals": [1, 2, 4, 8],
+                "ticktext": ["1-cell", "2-cell", "4-cell", "8-cell"],
+                "tp_label": "1-, 2-, 4-, 8-cell (2–5 reps each)",
+            },
+            "hours": emb_ribo_x,
+            "rep_hours": emb_ribo_rep,
+            "series": emb_ribo_series,
         },
     },
 }

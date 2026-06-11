@@ -29,6 +29,10 @@ wb.gaf.gz
 go-basic.obo
 GSE52905_footprint_normalized.txt.gz
 GSE52905_footprint_rawCounts.txt.gz
+GSE281412.HDF5
+GSE281412_1.HDF5
+embryo_rnaseq.tsv
+embryo_riboseq.tsv
 data.json
 nohup.out
 

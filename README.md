@@ -37,15 +37,21 @@ Opening the file directly works because the data is loaded via `<script src="dat
 (not `fetch`), so there are no `file://` CORS issues.
 
 ### Using the dashboard
-- **Dataset** — pick the experimental design from the dropdown. Two are wired up:
-  the **mRNA** continuous-development time course (Meeuse 2020, 5–48 h) and the
-  **ribosome-footprinting** continuous-development course (Hendriks 2014, 18–36 h).
+- **Dataset** — pick the experimental design from the dropdown. Four are wired up:
+  the **mRNA** continuous-development time course (Meeuse 2020, 5–48 h), the
+  **ribosome-footprinting** continuous-development course (Hendriks 2014, 18–36 h),
+  and two **early-embryo** designs across the first cleavages (1/2/4/8-cell, N2 only,
+  Cenik lab GSE281412): **total RNA-seq** and **RiboITP ribosome profiling**.
   Switching reswaps the axes, units, and timepoints and redraws your selected genes.
-  Each design is **normalized independently** and on a **different time base**, so
-  absolute heights are not comparable across datasets — the rhythm and phase are.
+  Each design is **normalized independently** and on a **different time base** (the
+  embryo designs use *cell number*, not hours), so absolute heights are not comparable
+  across datasets — the rhythm/phase (or stage trend) is.
   A gene not measured in the active dataset shows *"no data in this dataset"* on its chip.
 - **Add a gene** — type in the search box (symbol or WBGene ID) and pick from the list.
-  Add multiple genes to overlay them; each gets its own color.
+  Each gets its own color. To overlay several at once, **tick their checkboxes** in the
+  suggestion list (the ticks persist as you refine the search) and click **Add selected**;
+  pressing Enter adds the highlighted gene on its own. Genes already on the plot show
+  *"added"*.
 - **Remove** — click the `×` on a gene chip, or **Clear all**.
 - **Oscillators only** — restrict the search to the 3,739 genes classified as rhythmic by
   Meeuse et al. 2020 (see *Oscillator calls* below). Rhythmic genes carry an `osc φN°`
@@ -97,6 +103,10 @@ wb.gaf.gz + go-basic.obo
         │
 GSE52905_..._Footprint_normalized.txt.gz   ribosome footprinting (Hendriks 2014)
         │  (read directly by build_data.py as a second selectable dataset)
+        │
+GSE281412.HDF5 + GSE281412_1.HDF5          early-embryo RiboITP (Cenik 2025, RiboPy .ribo)
+        │  parse_riboseq_embryo.py → embryo_rnaseq.tsv + embryo_riboseq.tsv
+        │                            (WT/N2 only; total RNA + CDS footprints, CPM)
         ▼
         │  build_data.py  (shared gene annotation + osc + TF; one time-course
         │                  bundle per dataset, joined on WBGene ID)
@@ -113,10 +123,24 @@ incomparable time courses. A gene's annotation and osc/TF flags are stored once
 |---|---|---|---|---|
 | Continuous development — mRNA | GSE130811 (Meeuse 2020) | mRNA-seq | 5–48 h post-plating, hourly | DESeq2 norm. counts |
 | Continuous development — footprinting | GSE52905 (Hendriks 2014) | Ribo-seq | 18–36 h cont. dev., every 2 h | log2 depth-norm. footprint counts (stored linearized) |
+| Early embryo — total RNA-seq | GSE281412 (Cenik lab) | RNA-seq | 1/2/4/8-cell, 3 reps each | whole-transcript counts, CPM |
+| Early embryo — ribosome profiling | GSE281412 (Cenik lab) | Ribo-seq (RiboITP) | 1/2/4/8-cell, 2–5 reps each | CDS footprint counts, CPM |
 
-Both are N2 @25 °C, but the **time bases differ** (hours after plating vs. hours of
-continuous development) and the **measured quantity differs** (transcript abundance vs.
-ribosome occupancy), so they are never overlaid on one axis — you switch between them.
+The time bases and measured quantities differ across designs — hours after plating vs.
+hours of continuous development vs. **embryo cell number**; transcript abundance vs.
+ribosome occupancy — so they are never overlaid on one axis; you switch between them.
+The two **early-embryo** designs come from the Cenik-lab RiboITP study
+([GSE281412](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE281412),
+*"Low input ribosome profiling reveals stage-specific translational regulation during
+early C. elegans embryogenesis"*); only the **wild-type N2** samples are loaded (the
+OMA-1 gain-of-function mutant is dropped). The processed data are **RiboPy `.ribo`
+containers** (HDF5): `parse_riboseq_embryo.py` keeps the WT experiments, sums to
+whole-transcript counts (RNA) or CDS footprints summed over read lengths (Ribo),
+collapses isoforms to the stable WBGene ID, and CPM-normalizes each sample (the
+early-embryo inputs are tiny, so depth normalization makes stages comparable).
+On the plot, `v` is the per-stage mean and replicate points are the individual
+libraries at each stage. N2 here is reared at **20 °C** (vs. 25 °C for the
+continuous-development designs).
 
 ### Oscillator calls — primary: Meeuse et al. 2020 (`parse_meeuse.py`)
 The dashboard's `osc` flag is the **authoritative, peer-reviewed classification** from
@@ -260,7 +284,13 @@ mamba run -n collagen python detect_tfs.py
 curl -sL "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE52905&format=file&file=GSE52905%5Fce%5FgeneExpression%5FFootprint%5Fnormalized%2Etxt%2Egz" \
   -o GSE52905_footprint_normalized.txt.gz
 
-# 8. build the dashboard data  ->  data.json, then wrap into data.js
+# 8. early-embryo datasets: total RNA + RiboITP profiling (Cenik lab, GSE281412)
+#    RiboPy .ribo (HDF5) containers; parse_riboseq_embryo.py downloads them if
+#    absent, keeps WT/N2, and writes embryo_rnaseq.tsv + embryo_riboseq.tsv.
+#    (needs h5py: mamba install -n collagen -c conda-forge h5py)
+mamba run -n collagen python parse_riboseq_embryo.py
+
+# 9. build the dashboard data  ->  data.json, then wrap into data.js
 mamba run -n collagen python build_data.py
 { printf 'window.DATA='; cat data.json; } > data.js
 ```
@@ -278,6 +308,7 @@ mamba run -n collagen python build_data.py
 | `meeuse_EV1.xlsx` | ✓ | Meeuse et al. 2020 Dataset EV1 (CC-BY 4.0) |
 | `detect_oscillators.py` | ✓ | Computes osc cross-check from the time course |
 | `detect_tfs.py` | ✓ | Flags transcription factors from GO:0003700 |
+| `parse_riboseq_embryo.py` | ✓ | Extracts WT/N2 early-embryo RNA + RiboITP from the GSE281412 `.ribo` (HDF5) files |
 | `build_data.py` | ✓ | Builds shared annotation + one time-course bundle per dataset into `data.json` |
 | `GSE130811_expr.tab.gz` | ✓ | Raw count matrix from GEO |
-| `normalized_counts.tsv`, `oscillation.tsv`, `meeuse_osc.tsv`, `tf.tsv`, `data.json`, `*.gff.gz`, `*.gaf.gz`, `go-basic.obo`, `GSE52905_footprint_*.txt.gz`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |
+| `normalized_counts.tsv`, `oscillation.tsv`, `meeuse_osc.tsv`, `tf.tsv`, `data.json`, `*.gff.gz`, `*.gaf.gz`, `go-basic.obo`, `GSE52905_footprint_*.txt.gz`, `GSE281412*.HDF5`, `embryo_rnaseq.tsv`, `embryo_riboseq.tsv`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |
