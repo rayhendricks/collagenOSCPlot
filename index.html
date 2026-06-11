@@ -45,6 +45,16 @@
   #suggest .sugfoot button.clearp { background:none; border:1px solid var(--line); color:var(--muted);
         border-radius:6px; padding:7px 10px; font-size:12px; cursor:pointer; }
   #suggest .sugfoot button.clearp:hover { color:var(--fg); border-color:var(--accent); }
+  #suggest .sughdr { position:sticky; top:0; padding:7px 12px; font-size:11px; color:var(--muted);
+        background:#141822; border-bottom:1px solid var(--line); cursor:default; }
+  #suggest .sughdr:hover { background:#141822; }
+  #suggest .simr { color:var(--accent); font-size:11px; float:right; font-variant-numeric:tabular-nums; }
+  #suggest .simtoggle { cursor:pointer; margin-left:5px; padding:1px 7px; border-radius:4px;
+        border:1px solid var(--line); color:var(--muted); font-size:10px; }
+  #suggest .simtoggle.on { color:var(--bg); background:var(--accent); border-color:var(--accent); font-weight:600; }
+  .chip .sim-btn { cursor:pointer; margin-left:8px; color:var(--accent); font-size:11px; line-height:1;
+        border:1px solid var(--line); border-radius:5px; padding:2px 6px; white-space:nowrap; }
+  .chip .sim-btn:hover { border-color:var(--accent); background:rgba(90,169,230,.14); }
   .osc { color:#7bc86c; font-size:10px; font-weight:600; margin-left:6px;
          border:1px solid #2f5d34; border-radius:8px; padding:0 5px; }
   .tf  { color:#c9a0ff; font-size:10px; font-weight:600; margin-left:6px;
@@ -163,6 +173,7 @@ function renderDsHint(){
 }
 dsSel.addEventListener("change", () => {
   activeDS = dsSel.value;
+  clearSim(); matches = []; sug.style.display = "none";
   renderMeta(); renderDsHint(); renderChips(); draw();
 });
 
@@ -176,6 +187,84 @@ let colorOf = {};       // wbgene -> color (stable even after removals)
 let nextColor = 0;
 let matches = [];
 let activeIdx = -1;
+
+// --- co-expression similarity (live, per dataset) ---
+const simZcache = {};   // dataset id -> { wb: z-scored log2 profile }
+let simFor = null;      // gene the "similar" list is built for (null = normal search)
+let simMsg = "";        // message shown instead of results (too few timepoints / not expressed)
+let simScores = {};     // wb -> Pearson r vs simFor
+const MIN_TP_SIM = 6;   // correlation needs enough timepoints to mean anything (embryo's 4 is too few)
+
+function clearSim(){ simFor = null; simMsg = ""; simScores = {}; }
+
+let simMode = "rhythm";  // "rhythm" = detrended (co-cycle) | "trajectory" = raw (whole shape)
+
+function zscore(y){
+  const m = y.reduce((a,b)=>a+b,0) / y.length;
+  let ss = 0; for(const t of y) ss += (t-m)*(t-m);
+  const sd = Math.sqrt(ss / y.length) || 1e-9;
+  return y.map(t => (t-m)/sd);
+}
+// Local-mean detrend over ~one molt period (≈7 h). The window is derived from the
+// dataset's own time spacing, so it works on the hourly (Meeuse) and 2-hourly
+// (footprint) grids alike. This is the same idea as detect_oscillators.py.
+function detrendWindow(){
+  const h = ds().hours; let step = 1;
+  if(h.length > 1){
+    const diffs = []; for(let i=1;i<h.length;i++) diffs.push(h[i]-h[i-1]);
+    diffs.sort((a,b)=>a-b); step = diffs[diffs.length>>1] || 1;
+  }
+  return Math.max(3, Math.round(7/step));
+}
+function detrendLocal(y){
+  const w = detrendWindow(), half = w>>1, n = y.length, out = [];
+  for(let i=0;i<n;i++){
+    const a = Math.max(0,i-half), b = Math.min(n,i+half+1);
+    let s = 0; for(let j=a;j<b;j++) s += y[j];
+    out.push(y[i] - s/(b-a));
+  }
+  return out;
+}
+function simProfile(v){   // log2 → (optional detrend) → z-score; compares SHAPE not level
+  let y = v.map(x => Math.log2(x + 1));
+  if(simMode === "rhythm") y = detrendLocal(y);   // strip slow developmental trend, compare the cycle
+  return zscore(y);
+}
+function simZ(){          // {wb: profile} for expressed genes (cached per dataset+mode)
+  const key = activeDS + ":" + simMode;
+  if(simZcache[key]) return simZcache[key];
+  const series = ds().series, Z = {};
+  for(const wb in series){
+    const v = series[wb].v;
+    if(Math.max(...v) >= 16) Z[wb] = simProfile(v);   // same expression floor as the oscillator calls
+  }
+  return (simZcache[key] = Z);
+}
+function findSimilar(wb){   // ranked [r, wb] of the most-correlated genes, or null if query not expressed
+  const Z = simZ(), zq = Z[wb];
+  if(!zq) return null;
+  const n = zq.length, out = [];
+  for(const o in Z){
+    if(o === wb) continue;
+    const zo = Z[o]; let s = 0;
+    for(let i=0;i<n;i++) s += zq[i]*zo[i];   // Pearson r = mean(z_q · z_o)
+    out.push([s/n, o]);
+  }
+  out.sort((a,b)=> b[0]-a[0]);
+  return out.slice(0, 25);
+}
+function showSimilar(wb){
+  clearSim(); matches = []; activeIdx = -1;   // drop any stale search matches before switching modes
+  if(ds().hours.length < MIN_TP_SIM){
+    simMsg = `Co-expression needs ≥ ${MIN_TP_SIM} timepoints; “${ds().meta.label}” has only ${ds().hours.length}.`;
+    renderSuggest(); return;
+  }
+  const res = findSimilar(wb);
+  if(!res){ simMsg = `${D.genes[wb].sym} isn’t expressed in this dataset — nothing to compare.`; renderSuggest(); return; }
+  simFor = wb; q.value = ""; activeIdx = -1;
+  matches = res.map(([r,o]) => { simScores[o] = r; return { wb:o, sym:D.genes[o].sym }; });
+  q.focus(); renderSuggest();
+}
 
 function search(term){
   term = term.trim().toLowerCase();
@@ -195,10 +284,20 @@ function search(term){
 }
 
 function renderSuggest(){
+  // A short message (too few timepoints / gene not expressed) shows on its own.
+  if(simMsg){ sug.innerHTML = `<div class="sughdr">${simMsg}</div>`; sug.style.display="block"; return; }
   // Show the dropdown when there are matches OR when genes are ticked (so the
   // "Add selected" footer stays reachable even after the search box is cleared).
   if(matches.length === 0 && pending.size === 0){ sug.style.display="none"; sug.innerHTML=""; return; }
-  let html = matches.map((e,i) => {
+  let html = "";
+  if(simFor){
+    const tg = (m,lbl,tip) => `<span class="simtoggle ${simMode===m?'on':''}" data-mode="${m}" title="${tip}">${lbl}</span>`;
+    html = `<div class="sughdr">≈ <b>${D.genes[simFor].sym}</b> · ${ds().meta.label} · Pearson r&nbsp; ` +
+           tg("rhythm","rhythm","co-cycle: detrended — matches genes that rise and fall together within each cycle") +
+           tg("trajectory","trajectory","whole trajectory: matches the overall expression shape across the whole course") +
+           `</div>`;
+  }
+  html += matches.map((e,i) => {
     const g = D.genes[e.wb];
     const already = selected.includes(e.wb);      // already on the plot
     const checked = already || pending.has(e.wb);
@@ -206,10 +305,14 @@ function renderSuggest(){
     const tag = already ? `<span class="addedtag">added</span>` : "";
     const oscTag = g.osc ? `<span class="osc">osc${g.phase!=null?` φ${Math.round(g.phase)}°`:""}</span>` : "";
     const tfTag = g.tf ? `<span class="tf">TF</span>` : "";
+    // In similar-mode show the correlation; otherwise the biotype.
+    const right = simScores[e.wb]!=null
+      ? `<span class="simr">r ${simScores[e.wb]>=0?"+":""}${simScores[e.wb].toFixed(2)}</span>`
+      : `<span class="bt">${g.bt}</span>`;
     return `<div data-wb="${e.wb}" class="${cls}">` +
            `<input type="checkbox" class="pick" ${checked?'checked':''} ${already?'disabled':''}>` +
            `<span class="sym">${e.sym}</span>${tag}${oscTag}${tfTag}<span class="wb">${e.wb}</span>` +
-           `<span class="bt">${g.bt}</span></div>`;
+           right + `</div>`;
   }).join("");
   if(pending.size > 0){
     html += `<div class="sugfoot"><button class="add">Add selected (${pending.size})</button>` +
@@ -230,6 +333,10 @@ function renderSuggest(){
   if(addBtn) addBtn.onclick = (ev) => { ev.stopPropagation(); commitPending(); };
   const clearBtn = sug.querySelector('.sugfoot .clearp');
   if(clearBtn) clearBtn.onclick = (ev) => { ev.stopPropagation(); pending.clear(); renderSuggest(); };
+  [...sug.querySelectorAll('.simtoggle')].forEach(t => t.onclick = (ev) => {
+    ev.stopPropagation();
+    if(t.dataset.mode !== simMode){ simMode = t.dataset.mode; showSimilar(simFor); }   // recompute in the other mode
+  });
 }
 
 function togglePending(wb){
@@ -237,9 +344,9 @@ function togglePending(wb){
   const top = sug.scrollTop; renderSuggest(); sug.scrollTop = top;   // keep scroll position while ticking
 }
 
-q.addEventListener("input", () => { matches = search(q.value); activeIdx = -1; renderSuggest(); });
+q.addEventListener("input", () => { clearSim(); matches = search(q.value); activeIdx = -1; renderSuggest(); });
 ["osconly", "tfonly"].forEach(id => document.getElementById(id).addEventListener("change", () => {
-  matches = search(q.value); activeIdx = -1; renderSuggest(); q.focus();
+  clearSim(); matches = search(q.value); activeIdx = -1; renderSuggest(); q.focus();
 }));
 q.addEventListener("keydown", (e) => {
   if(sug.style.display==="none") return;
@@ -269,7 +376,7 @@ function addGeneRaw(wb){          // mutate state only; no DOM/redraw (for batch
     if(!colorOf[wb]){ colorOf[wb] = palette[nextColor % palette.length]; nextColor++; }
   }
 }
-function resetSearch(){ pending.clear(); q.value = ""; matches = []; sug.style.display = "none";
+function resetSearch(){ pending.clear(); clearSim(); q.value = ""; matches = []; sug.style.display = "none";
                         sug.innerHTML = ""; q.focus(); renderChips(); draw(); }
 function addGene(wb){            // single immediate add (Enter / programmatic seed)
   addGeneRaw(wb); resetSearch();
@@ -289,9 +396,14 @@ function renderChips(){
     const noData = sv(wb) ? "" : ` · <span style="color:#e06c75">no data in this dataset</span>`;
     return `<span class="chip"><span class="dot" style="background:${colorOf[wb]}"></span>` +
            `<span>${g.sym} <small>${coord}${oscNote}${noData}</small></span>` +
+           `<span class="sim-btn" data-wb="${wb}" title="find similarly-expressed genes">≈ similar</span>` +
            `<span class="x" data-wb="${wb}">×</span></span>`;
   }).join("");
   [...chipsEl.querySelectorAll(".x")].forEach(x => x.onclick = () => removeGene(x.dataset.wb));
+  [...chipsEl.querySelectorAll(".sim-btn")].forEach(b => b.onclick = (ev) => {
+    ev.stopPropagation();        // don't let the outside-click handler immediately re-hide the dropdown
+    showSimilar(b.dataset.wb);
+  });
 }
 
 function currentScale(){ return document.querySelector('input[name=scale]:checked').value; }
