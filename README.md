@@ -62,6 +62,13 @@ Opening the file directly works because the data is loaded via `<script src="dat
   oscillator's own regulators — 125 genes).
 - **Replicate points** — 7 timepoints (37, 38, 39, 41, 45, 47, 48 h) have a second
   replicate, shown as open diamonds. Toggle with the checkbox.
+- **Time axis: 25 °C vs 20 °C-equivalent** — the continuous-development designs were
+  grown at 25 °C; the toggle relabels their hours ×1.5 so they line up with standard
+  20 °C lab timing (5–48 h → 7.5–72 h). The factor comes from Byerly et al. 1976
+  (hatch → L4 molt 45 h at 20 °C vs 30.5 h at 25 °C = 1.48×; growth-rate factor 1.53×)
+  and RAPToR transcriptome staging of a 25 °C series on a 20 °C reference (1.5×;
+  Bulteau & Francesconi 2022, *Nat Methods*). It rescales time only, not expression, and
+  is a whole-development average: individual stages speed up ~1.1–1.6×.
 - **Linear vs Log₁₀** — linear shows how big a peak is; log shows the rhythm and is the
   honest view for sharp oscillators like `lin-42`.
 
@@ -310,5 +317,7 @@ mamba run -n collagen python build_data.py
 | `detect_tfs.py` | ✓ | Flags transcription factors from GO:0003700 |
 | `parse_riboseq_embryo.py` | ✓ | Extracts WT/N2 early-embryo RNA + RiboITP from the GSE281412 `.ribo` (HDF5) files |
 | `build_data.py` | ✓ | Builds shared annotation + one time-course bundle per dataset into `data.json` |
+| `collagens_teuscher2019.tsv` | ✓ | The 181 *C. elegans* collagens (Teuscher et al. 2019 matrisome) joined to this dataset: WBGene ID, oscillator call, amplitude, phase. `bli-6` (= `col-112`) and `col-182` (pseudogene) are not in the matrix |
+| `plot_collagen_grid.py` | ✓ | Small-multiples PNG of collagen time courses (20 °C-equivalent time). `python3 plot_collagen_grid.py` draws all 179; `--genes col-19,bli-1,... --minimal` draws a subset. Needs headless Google Chrome |
 | `GSE130811_expr.tab.gz` | ✓ | Raw count matrix from GEO |
 | `normalized_counts.tsv`, `oscillation.tsv`, `meeuse_osc.tsv`, `tf.tsv`, `data.json`, `*.gff.gz`, `*.gaf.gz`, `go-basic.obo`, `GSE52905_footprint_*.txt.gz`, `GSE281412*.HDF5`, `embryo_rnaseq.tsv`, `embryo_riboseq.tsv`, `gene_annotation.tsv` | — | Regenerable intermediates (git-ignored) |

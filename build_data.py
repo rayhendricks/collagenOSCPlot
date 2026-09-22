@@ -159,6 +159,7 @@ out = {
                 "pseudo": 1,            # DESeq2 floor ~1 (min nonzero 0.75)
                 "norm": "DESeq2 median-of-ratios (size-factor) normalized counts",
                 "timeref": "hours after plating (25°C)",
+                "grown_c": 25,          # culture temp; dashboard can rescale to 20°C-equivalent
             },
             "hours": main_hours,
             "rep_hours": rep_hours,
@@ -173,6 +174,7 @@ out = {
                 "pseudo": 1,            # no zeros in this design; +1 is negligible vs min 8
                 "norm": "log2 depth-normalized footprint counts (stored linearized)",
                 "timeref": "hours of continuous development (25°C)",
+                "grown_c": 25,          # culture temp; dashboard can rescale to 20°C-equivalent
             },
             "hours": fp_hours,
             "rep_hours": [],

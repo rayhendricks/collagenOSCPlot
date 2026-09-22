@@ -40,3 +40,11 @@ nohup.out
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+
+# --- unpublished hypoxia analysis (lives in the private hypoxia-stage-analysis repo) ---
+hypoxia/
+
+# --- regenerable figure outputs (python3 plot_collagen_grid.py) ---
+collagen_overview.*
+late_collagens*.*
+pulse_M4_collagens.*
