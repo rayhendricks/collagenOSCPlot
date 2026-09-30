@@ -120,6 +120,13 @@
       <label><input type="radio" name="scale" value="log"> Log&#8321;&#8320;</label>
     </div>
 
+    <div class="scale" id="timebox">
+      <b style="font-size:12px;color:var(--muted)">TIME AXIS</b><br>
+      <label><input type="radio" name="timemode" value="native" checked> 25&deg;C (as grown)</label>
+      <label><input type="radio" name="timemode" value="t20"> 20&deg;C-equivalent</label>
+      <div class="dshint" id="timehint"></div>
+    </div>
+
     <div class="meta" id="meta"></div>
     <div class="hint">Tick several suggestions and hit <b>Add selected</b> to plot them together
        (or just press Enter to add one). Linear shows absolute amplitude;
@@ -138,6 +145,29 @@ const palette = ["#5aa9e6","#e6915a","#7bc86c","#c678dd","#e6c84f","#56b6c2",
 
 let activeDS = D.default_dataset;
 function ds(){ return D.datasets[activeDS]; }
+
+// 25°C → 20°C-equivalent time. Development at 25°C runs ~1.5× faster than at 20°C:
+// Byerly et al. 1976 (hatch→L4 molt 45 h vs 30.5 h = 1.48×; growth-rate factor 1.53×)
+// and RAPToR transcriptome staging of a 25°C series on a 20°C reference (1.5×;
+// Bulteau & Francesconi 2022). Relabels time only — expression values are unchanged.
+const T20_FACTOR = 1.5;
+function timeMode(){ return document.querySelector('input[name=timemode]:checked').value; }
+// Rescaling applies only to datasets grown at 25°C (not the embryo cell-number axis).
+function t20Active(){ return ds().meta.grown_c === 25 && timeMode() === "t20"; }
+function tx(arr){ return t20Active() ? arr.map(t => t * T20_FACTOR) : arr; }
+function timeTitle(){
+  const m = ds().meta;
+  return t20Active()
+    ? m.timeref.replace(/\s*\(25°C\)$/, "") + ` — 20°C-equivalent (25°C h × ${T20_FACTOR})`
+    : m.timeref;
+}
+function renderTimeBox(){
+  const on = ds().meta.grown_c === 25;
+  document.getElementById("timebox").style.display = on ? "" : "none";
+  document.getElementById("timehint").textContent = t20Active()
+    ? `Hours × ${T20_FACTOR} (Byerly 1976; RAPToR 2022). Relabels time only; per-stage speed-up varies (~1.1–1.6×).`
+    : "";
+}
 // per-gene time course for the active dataset (undefined if the gene isn't in it)
 function sv(wb){ return ds().series[wb]; }
 
@@ -152,8 +182,9 @@ function renderMeta(){
     `<b>Normalization:</b> ${m.norm || D.meta.normalization}<br>` +
     `<b>Annotation:</b> ${D.meta.assembly}<br>` +
     `<b>Timepoints:</b> ` +
-      (m.tp_label || `${ds().hours[0]}–${ds().hours[ds().hours.length-1]} h` +
-        (reps ? ` (hourly), +${reps} replicates` : "")) + `<br>` +
+      (m.tp_label || `${tx(ds().hours)[0]}–${tx(ds().hours).at(-1)} h` +
+        (t20Active() ? ` (20°C-equiv.; grown ${ds().hours[0]}–${ds().hours.at(-1)} h at 25°C)` : "") +
+        (reps ? ` (${t20Active() ? `every ${T20_FACTOR} h` : "hourly"}), +${reps} replicates` : "")) + `<br>` +
     `<b>Oscillators:</b> ${D.meta.n_osc.toLocaleString()} genes — Meeuse et al. 2020 (cosine fit; with amplitude + peak phase)<br>` +
     `<span style="color:var(--muted)">cross-check: ${D.meta.n_oscC.toLocaleString()} by our computed method (see README)</span><br>` +
     `<b>Transcription factors:</b> ${D.meta.n_tf.toLocaleString()} genes (GO:0003700, DNA-binding TF activity)`;
@@ -174,7 +205,7 @@ function renderDsHint(){
 dsSel.addEventListener("change", () => {
   activeDS = dsSel.value;
   clearSim(); matches = []; sug.style.display = "none";
-  renderMeta(); renderDsHint(); renderChips(); draw();
+  renderMeta(); renderDsHint(); renderTimeBox(); renderChips(); draw();
 });
 
 const q = document.getElementById("q");
@@ -417,7 +448,7 @@ function draw(){
   // and the line connects smoothly. Linear mode stays raw. Hover always shows the true count.
   const PSEUDO = ds().meta.pseudo ?? 1;   // per-dataset log floor (set in build_data.py)
   const yfor = (arr) => scale === "log" ? arr.map(v => v + PSEUDO) : arr;
-  const hours = ds().hours, repHours = ds().rep_hours || [], units = ds().meta.units;
+  const hours = tx(ds().hours), repHours = tx(ds().rep_hours || []), units = ds().meta.units;
   const traces = [];
   selected.forEach(wb => {
     const s = sv(wb); if(!s) return;        // gene not measured in this dataset
@@ -434,14 +465,14 @@ function draw(){
   const title = selected.length===1
       ? `${D.genes[selected[0]].sym} — ${units}`
       : `${units} — ${selected.length} genes`;
-  const xpad = 1, xlo = hours[0]-xpad, xhi = hours[hours.length-1]+xpad;
+  const xpad = t20Active() ? T20_FACTOR : 1, xlo = hours[0]-xpad, xhi = hours[hours.length-1]+xpad;
   // Stage designs (embryo) carry explicit tickvals/ticktext (1-/2-/4-/8-cell);
   // hourly designs fall back to a fixed 5 h tick spacing.
   const xmeta = ds().meta;
-  const xaxis = { title:xmeta.timeref, type:"linear", range:[xlo,xhi],
+  const xaxis = { title:timeTitle(), type:"linear", range:[xlo,xhi],
                   gridcolor:"#262b38", zeroline:false };
   if(xmeta.tickvals){ xaxis.tickvals = xmeta.tickvals; xaxis.ticktext = xmeta.ticktext || xmeta.tickvals; }
-  else { xaxis.dtick = 5; }
+  else { xaxis.dtick = t20Active() ? 6 : 5; }
   // Y-axis. Log mode frames only the *selected* genes between whole decades (so one
   // very-high gene elsewhere in the dataset can't flatten everything), pins zeros to
   // the bottom decade via the per-dataset pseudocount, and uses clean 1/10/100 ticks.
@@ -474,10 +505,12 @@ function draw(){
 
 document.querySelectorAll('input[name=scale]').forEach(r => r.addEventListener("change", draw));
 document.getElementById("showrep").addEventListener("change", draw);
+document.querySelectorAll('input[name=timemode]').forEach(r => r.addEventListener("change", () => {
+  renderMeta(); renderTimeBox(); draw(); }));
 document.getElementById("clear").addEventListener("click", () => {
   selected=[]; pending.clear(); renderChips(); renderSuggest(); draw(); });
 
-renderMeta(); renderDsHint();
+renderMeta(); renderDsHint(); renderTimeBox();
 
 // default view: a couple of canonical oscillating genes
 ["lin-42","col-19"].forEach(sym => {
